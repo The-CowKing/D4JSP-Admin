@@ -1,0 +1,148 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Barlow+Condensed:ital,wght@0,700;0,900;1,700;1,900&family=Barlow:wght@400;600;700&display=swap');
+
+/* D4 game fonts — served from public/fonts/ */
+@font-face { font-family: 'ExocetBlizzard'; src: url('/fonts/ExocetBlizzard-Medium.ttf') format('truetype'); font-weight: 500; font-display: swap; }
+@font-face { font-family: 'ExocetBlizzard'; src: url('/fonts/ExocetBlizzard-Light.ttf') format('truetype'); font-weight: 300; font-display: swap; }
+@font-face { font-family: 'Exocet'; src: url('/fonts/ExocetHeavy.woff2') format('woff2'), url('/fonts/ExocetHeavy.ttf') format('truetype'); font-weight: bold; font-style: normal; font-display: swap; }
+@font-face { font-family: 'TrajanPro'; src: url('/fonts/TrajanPro-Bold.ttf') format('truetype'); font-weight: 700; font-display: swap; }
+@font-face { font-family: 'TrajanPro'; src: url('/fonts/TrajanPro-Regular.otf') format('opentype'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'BlizzardSans'; src: url('/fonts/Blizzard_SansSerif.ttf') format('truetype'); font-weight: 400; font-display: swap; }
+@font-face {
+  font-family: 'OldFenris';
+  src: url('/fonts/OldFenris.woff2') format('woff2'),
+       url('/fonts/OldFenris.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --g: #D4AF37;
+  --gd: #B8860B;
+  --g2: #8B6914;
+  --bg: #080608;
+  --c: #0e0c10;
+  --c2: #141218;
+  --c3: #1a1620;
+  --bd: #1e1a24;
+  --bd2: #2a2535;
+  --bd3: #3a3048;
+  --tx: #e8e0f0;
+  --mt: #6a6078;
+  --sub: #9a8faa;
+  --red: #8B0000;
+  --red2: #dc2626;
+}
+
+html, body {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
+  background: #080608 !important;
+}
+
+body {
+  background: #080608 !important;
+  color: var(--tx);
+  font-family: 'Barlow', sans-serif;
+  min-height: 100vh;
+}
+
+::selection {
+  background: rgba(212, 175, 55, 0.3);
+  color: #fff;
+}
+
+/* Scrollbars */
+* { scrollbar-width: thin; scrollbar-color: rgba(42, 37, 53, 0.6) transparent; }
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(42, 37, 53, 0.6); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(42, 37, 53, 0.9); }
+
+/* Focus styles */
+input:focus, textarea:focus, select:focus, button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.2), 0 0 12px rgba(212, 175, 55, 0.1);
+}
+
+/* Spinner */
+.spin {
+  width: 32px; height: 32px;
+  border: 2px solid rgba(42, 37, 53, 0.4);
+  border-top-color: var(--g);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Glow animations */
+@keyframes glowPulseLegendary {
+  0%, 100% { box-shadow: 0 0 18px rgba(212,175,55,.4), 0 0 40px rgba(255,140,0,.15); }
+  50% { box-shadow: 0 0 28px rgba(212,175,55,.6), 0 0 56px rgba(255,140,0,.25); }
+}
+@keyframes glowPulsePremium {
+  0%, 100% { box-shadow: 0 0 14px rgba(212,175,55,.25), 0 0 28px rgba(212,175,55,.08); }
+  50% { box-shadow: 0 0 22px rgba(212,175,55,.4), 0 0 40px rgba(212,175,55,.15); }
+}
+
+/* Utility classes */
+.cinzel { font-family: 'Exocet', 'Cinzel', serif; }
+.gold { color: var(--g); }
+
+/* Gothic card */
+.gothic-card {
+  background: linear-gradient(135deg, var(--c), var(--c2));
+  border: 1px solid rgba(212, 175, 55, 0.06);
+  border-radius: 16px;
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.gothic-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(212, 175, 55, 0.15), transparent);
+}
+.gothic-card:hover {
+  box-shadow: 0 0 20px rgba(212, 175, 55, 0.08);
+  border-color: rgba(212, 175, 55, 0.12);
+}
+
+/* Thread card */
+.thread-card {
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+.thread-card:hover {
+  box-shadow: 0 0 20px rgba(212, 175, 55, 0.12);
+  border-color: rgba(212, 175, 55, 0.15) !important;
+  transform: translateY(-1px);
+}
+
+/* Nav items */
+.nav-item { transition: all 0.2s ease; }
+.nav-item:hover {
+  background: rgba(212, 175, 55, 0.04) !important;
+  color: #e8e0f0 !important;
+  text-shadow: 0 0 20px rgba(212, 175, 55, 0.3);
+}
+
+/* Badge classes */
+.badge-legendary { background: linear-gradient(135deg, #D4AF37, #8B6914); color: #000; }
+.badge-premium { background: linear-gradient(135deg, #7c3aed, #4c1d95); color: #fff; }
+.badge-basic { background: #1e1a24; color: #6a6078; }
+.badge-admin { background: #7B0000; color: #ffaaaa; }
+
+/* Inputs */
+input, textarea, select {
+  font-family: inherit;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
