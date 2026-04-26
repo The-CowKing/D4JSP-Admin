@@ -11,12 +11,44 @@ The append-only ledger of user asks, what shipped, and how to roll back. **Read 
 
 ## Live now
 
+- **#48 — Pre-tooltip-fix backup tag (closed)** — Tag `backup/2026-04-26-pre-tooltip` pushed to all 4 repos at current HEAD. Rollback target if tooltip work regresses anything. No code change.
 - **#47 — Gem stuck on after kill / despawn (closed)** — `D4JSP/3b4ebdf` deployed to KVM 4. Release path now robust against realtime delivery semantics + passive despawn TTL. Cause was NOT a code regression (gem state machine matches pre-migration `b438f1f`) and NOT KVM 4 nginx (Supabase realtime is browser↔Supabase direct, KVM 4 isn't in that path). Cause was client-side dependency on realtime UPDATE-to-killed delivery + no despawn timer. Spot-check checklist below.
 - **#46 — Banner-only announcement, drop legacy spawn toast, weekly limit (closed)** — `D4JSP/642c6ab` deployed. Three independent visual elements: click-anim (local), gem-on (realtime), banner (realtime). Bottom-right spawn toast removed. Weekly spawn limit added on `triggers.config.max_per_week`.
 - **#45 — `/api/forum-trolls` cache + click-flash perception (closed)** — `D4JSP/bb200ce` deployed. Cache-Control: no-store, click-flash extended 180→320ms with snap-fast filter. Persistent glow now flips within ~1s of spawn instead of after 20s cache window.
 - **#44 — Gem moved off hero illustration (closed)** — `D4JSP/7e1febf` deployed. Reverts zIndex 9999→107 from #42; gem returns to anchor on goblin's gem in Latest Trades banner.
 - **#43 — Wiki + memory architecture build (closed)** — `D4JSP/8767582` + `D4JSP-Admin/c43ac83` + `D4JSP-Build-Planner/4c0e85b` + `D4JSP-Map/976c0c9`. All 4 repos verified clean.
 - **#42 — Gem button regression fix (closed)** — `D4JSP/00ec198`. Click-flash restored after `c5d83c8` regression.
+
+---
+
+## #48 — Pre-tooltip-fix backup tag
+- **Status:** closed (2026-04-26)
+- **Asked:** "make a backup state"
+- **Scope:** Cheap rollback insurance before tooltip work begins. Git tag at current HEAD on all 4 repos, pushed to origin. No code change.
+- **Tag:** `backup/2026-04-26-pre-tooltip`
+- **Tag commits:**
+  - `D4JSP/ac51586` (`docs: close #47; pin release-path contract + realtime-not-via-kvm-4 note`)
+  - `D4JSP-Admin/956ea8a` (`docs: sync — close #47 + pin release-path + realtime-direct note`)
+  - `D4JSP-Build-Planner/eae10b3` (`docs: sync — close #47 + pin release-path + realtime-direct note`)
+  - `D4JSP-Map/29bd2ec` (`docs: sync — close #47 + pin release-path + realtime-direct note`)
+- **Verification (checklist):**
+  - [x] `git rev-parse backup/2026-04-26-pre-tooltip^{}` MATCH HEAD on all 4 repos
+  - [x] Tag pushed to all 4 origins (visible in GitHub Releases / Tags)
+- **Rollback procedure (use if tooltip work breaks something):**
+  ```bash
+  cd <repo>
+  git fetch --tags
+  git reset --hard backup/2026-04-26-pre-tooltip
+  PAT=$(cat "C:/Users/Owner/Desktop/keyz/github-pat.txt" | tr -d '\r\n')
+  git push --force "https://x-access-token:${PAT}@github.com/The-CowKing/<repo>.git" HEAD:main
+  unset PAT
+  # Then on KVM 4 for trade app:
+  ssh -i .../d4jsp_kvm4_claude root@177.7.32.128 \
+    "cd /opt/d4jsp && git fetch --tags origin && \
+     git reset --hard backup/2026-04-26-pre-tooltip && \
+     npm run build && pm2 reload d4jsp"
+  ```
+  Force-push warning: only safe because Adam authorized the rollback explicitly. Any commits made after the tag would be lost.
 
 ---
 
