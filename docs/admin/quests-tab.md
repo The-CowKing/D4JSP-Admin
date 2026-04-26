@@ -12,6 +12,15 @@ The wire-dot / "NOT WIRED" / connected badges on quest rows are the SAME flag ev
 - `POST /api/admin/triggers/emit` — debug fire any trigger as any user
 - `POST /api/admin/trigger-expiry-check` — periodic sweep (manual today)
 
+## Where the gem's spawn config lives in admin
+
+Adam: *"found it it's under its trigger but still was working just before"* — the spawn config is on the **trigger** row, not the quest row. Two-tab navigation:
+
+- **Spawn behavior (click range, recurring, expiry, allowed subscriptions, max_per_week, max_alive_concurrent)** — `Admin → Features → Triggers` sub-tab → edit `forum_troll_spawned` row → `config` jsonb. See [`../catalogs/triggers.md`](../catalogs/triggers.md).
+- **Quest reward / type / requirements / spawn_limit / clicks_to_kill / despawn_minutes / spawn_location** — `Admin → Catalogs → Quests` sub-tab → edit `Summon forum troll` (or `First Blood` for kill quest) → `config` jsonb + rewards array. See [`../catalogs/quests.md`](../catalogs/quests.md).
+
+The two are linked via `quests.trigger_id = 'forum_troll_spawned'` (or `'forum_troll_slain'` for the kill quest). Don't change the trigger_id without also confirming the quest still resolves.
+
 ## Editing forum_troll_spawned
 
 To change troll behavior:
