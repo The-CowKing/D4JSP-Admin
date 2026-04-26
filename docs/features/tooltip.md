@@ -96,6 +96,7 @@ In [`../../components/HomeView.js`](../../components/HomeView.js):
 - **`a17c251`** + **`9f3fc21`** + **`7bfebf2`** (2026-04-17, afternoon) — series of "follow the variable height down the chain" commits that removed fixed heights / `overflow: hidden` from card / content wrapper / left panel / feed-thumb. Compounded the `b0a8bea` regression by letting the now-content-driven tooltip height bubble up to the card outer height (per-card variance on Latest Trades).
 - **#48 fix** (2026-04-26) — restored `min-height: 380px !important` on `.whtt-scroll` (revert of `b0a8bea`'s deletion); added `.feed-thumb .whtt-scroll { overflow: hidden }` rule; restored explicit heights + `overflow: hidden` on the HomeView wrapper chain.
 - **#54 fix** (2026-04-26) — restructured the height lock from `height:auto` container + `min/max-height` on scroll, to `height:520px` on container + `flex:1 1 0` on scroll. Buy Now / price / footer (`.d4-bottom-fixed`) was being pushed below the visible frame on long-content preview cards under the prior shape because `overflow:hidden` + flex's basis-resolution rules let the scroll-area render past `max-height:420`. Fixed-container approach makes the layout deterministic: scroll-area always grows to fill 420 within the 520 container, bottom-fixed always anchored at the bottom 100.
+- **#55 fix** (2026-04-26) — desktop right-edge clipping. Wowhead's base CSS forces `white-space:normal!important` on tooltip table cells via a mobile-only `@media (max-width:599px)` rule. On desktop, tables/cells inherit default wrap behavior plus `.wowhead-tooltip td { max-width:500px }`, letting long flavor text render the cell wider than the locked 300px tooltip and overflow horizontally past the right edge. Mirrored the mobile wrap rule globally + added `overflow-wrap:anywhere` and `max-width:300px` clamps on table cells / scroll descendants. Also added `overflowWrap: 'anywhere'` + `hyphens: 'auto'` on the seller-column username so it can break mid-word as a fallback when space-breaks don't fit at desktop font rendering.
 
 ## DO NOT BREAK
 
@@ -107,6 +108,13 @@ In [`../../components/HomeView.js`](../../components/HomeView.js):
 6. **Width: 300px** on `.wowhead-tooltip[data-game="d4"]` (global at [`../../components/D4Tooltip.js:54`](../../components/D4Tooltip.js#L54), per-instance at [`../../components/D4Tooltip.js:612`](../../components/D4Tooltip.js#L612)). Both must stay.
 7. **D4Tooltip's `writeLayout` self-measure.** With the height lock in place, scrollHeight is stable; writeLayout converges in one pass. If a future "optimization" removes writeLayout, the inline-block wrap will reserve full intrinsic 300px × 520px space regardless of `scale`, breaking layouts.
 8. **The Buy Now button must always be visible.** The bottom-fixed area carries the actionable buy button; clipping it breaks the marketplace UX. If you change layout in this area, verify on a long-content item that the button stays inside the visible frame on both preview and post.
+9. **The desktop wrap rules** (`white-space:normal!important; overflow-wrap:anywhere!important` on tooltip tables/cells, `max-width:300px!important` on cells, `overflow-wrap:anywhere; word-break:break-word` on `.whtt-scroll *`) — restore #55. Wowhead's base CSS only forces wrap on `max-width:599px`; without our global mirror, desktop tooltips overflow their locked 300px width on long flavor text. Don't remove these rules thinking they're redundant with mobile.
+
+## Desktop layout — DO NOT NARROW the left panel
+
+The card's left panel hosts the tooltip thumbnail. Its width is `leftPanelW = round(300 * tooltipScale) + 4` (the 4 is buffer). At minimum tooltipScale (0.15 on desktop, 0.30 on mobile) that's 49px / 94px. The 300px tooltip layout box is scaled to fit visually inside this width via `transform: scale(tooltipScale)`. **Do not narrow leftPanelW below `300*scale + 4`** — the tooltip's intrinsic 300px-wide box will then overflow the panel's right edge and clip via the panel's `overflow:hidden`. The +4 buffer is intentional; don't remove it.
+
+The tooltip itself is locked at `width: 300px` (intrinsic). After scaling, visual width = 300 × scale. Always smaller than or equal to leftPanelW. **The desktop right-edge clip in #55 was a TEXT WRAPPING bug inside the tooltip, not a panel-width bug** — table cells were rendering wider than 300px on desktop because Wowhead's base wrap-rule was mobile-only. Fixed in `_injectBgOverride()` with global wrap rules.
 
 ## Verification spec (any change to this file must pass)
 
@@ -125,4 +133,4 @@ In [`../../components/HomeView.js`](../../components/HomeView.js):
 - [`../../components/HomeView.js`](../../components/HomeView.js) — preview-card wrapper chain.
 - [`../../components/ThreadDetailView.js`](../../components/ThreadDetailView.js) — post-view caller.
 - [`../../public/css/wowhead-tooltip.css`](../../public/css/wowhead-tooltip.css) — Wowhead's base CSS we layer overrides on top of.
-- [`../_batch-log.md`](../_batch-log.md) #48 (diagnosis), #50 (initial fix), #54 (bottom-anchor restructure) — the work history.
+- [`../_batch-log.md`](../_batch-log.md) #48 (diagnosis), #50 (initial fix), #54 (bottom-anchor restructure), #55 (desktop right-edge wrap) — the work history.
