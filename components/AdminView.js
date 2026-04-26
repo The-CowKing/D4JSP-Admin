@@ -4465,11 +4465,13 @@ const QUEST_TYPES = [
 ];
 
 const QUEST_WIRED = {
-  // Quest type tracking
-  daily:    { status: 'red', note: 'No cron/reset logic. Need daily quest reset + progress tracking.' },
-  weekly:   { status: 'red', note: 'No cron/reset logic. Need weekly quest reset + progress tracking.' },
-  seasonal: { status: 'red', note: 'No season system. Need season dates + quest progress tracking.' },
-  one_time: { status: 'red', note: 'No completion tracking. Need user_quests table + completion check.' },
+  // Quest type tracking — updated post-#61 to reflect production reality.
+  // quest_progress table is the per-user state row; quest-trigger.js performs
+  // the upsert + reward grant chain. Daily reset is handled inline (#61).
+  daily:    { status: 'green', note: 'Wired: quest_progress upserts on each trigger fire; daily reset detection in quest-trigger.js (per-day completed gate). Reward grants via fg_ledger + increment_user_fg RPC (#61).' },
+  weekly:   { status: 'yellow', note: 'Quest progress + grants are wired (#61). Weekly reset boundary not yet implemented — completion just persists indefinitely.' },
+  seasonal: { status: 'yellow', note: 'Quest progress + grants are wired (#61). Season-window boundary checks not yet implemented.' },
+  one_time: { status: 'green', note: 'Wired: quest_progress.completed=true gate prevents re-grant. Reward chain via fg_ledger + increment_user_fg RPC (#61).' },
 };
 
 const REQUIREMENT_TYPES = [
@@ -4485,8 +4487,8 @@ const REQUIREMENT_TYPES = [
   { id: 'list_items',      label: 'List Items',        unit: 'listings',  placeholder: '5',   wired: 'yellow', note: 'Thread creation exists but no event emitted for quest tracking.' },
   { id: 'use_escrow',      label: 'Use Escrow',        unit: 'times',     placeholder: '3',   wired: 'yellow', note: 'Escrow table exists. Need insert trigger for quest progress.' },
   { id: 'send_messages',   label: 'Send Messages',     unit: 'messages',  placeholder: '10',  wired: 'red',    note: 'Messages table exists but no counter per user per period.' },
-  { id: 'kill_forum_troll', label: 'Kill Forum Troll',  unit: 'trolls',    placeholder: '1',   wired: 'red',    note: 'Need troll encounter system — spawn trolls on flagged posts, user clicks to slay.' },
-  { id: 'trigger_forum_troll', label: 'Trigger Forum Troll', unit: 'spawns', placeholder: '1',  wired: 'red',    note: 'Admin/gem spawns a troll encounter. Need gem button hook + troll spawn endpoint.' },
+  { id: 'kill_forum_troll', label: 'Kill Forum Troll',  unit: 'trolls',    placeholder: '1',   wired: 'green',  note: 'Wired: forum-trolls.js POST action="hit" decrements HP, sets killed_at on HP=0, fires forum_troll_slain trigger, _progressTrollKillQuests advances any quest with that trigger_id and grants rewards via fg_ledger + increment_user_fg RPC (#61).' },
+  { id: 'trigger_forum_troll', label: 'Trigger Forum Troll', unit: 'spawns', placeholder: '1',  wired: 'green',  note: 'Wired: AppShell.handleGemClick fires POST /api/quest-trigger { trigger_id: "forum_troll_spawned" } when click chain hits target; _spawnForumTroll inserts forum_trolls row on quest completion; rewards granted via fg_ledger + increment_user_fg RPC (#61).' },
 ];
 
 const REWARD_TYPES = [
