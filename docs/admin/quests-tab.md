@@ -16,6 +16,7 @@ To change troll behavior:
 - Tier gate: edit `triggers.config.allowed_subscriptions`.
 - Lifecycle: edit `triggers.config` (`expires_after`, `recurring`, `on_expiry`).
 - **Weekly spawn limit (global): edit `triggers.config.max_per_week`** to an integer. Counts spawns across all users in the trailing 7 days. Hitting the cap returns HTTP 429 to the user with a clear message. Unset/null = no limit. Added in #46.
+- **Concurrent-alive limit (global): edit `triggers.config.max_alive_concurrent`** to an integer. Counts trolls currently alive (`killed_at IS NULL AND despawn_at > NOW()`). Hitting the cap returns HTTP 429 with `blocked: 'concurrent_limit'`. **Defaults to `1` if unset/null** (NOT unlimited — UX assumes one-at-a-time banner/gem visuals). Bump only if multi-troll UI ships. Added in #51.
 
 ## Related
 

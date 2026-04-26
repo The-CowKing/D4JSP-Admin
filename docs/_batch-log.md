@@ -11,6 +11,7 @@ The append-only ledger of user asks, what shipped, and how to roll back. **Read 
 
 ## Live now
 
+- **#51 — Banner + gem stuck on after killing one troll while others still alive (closed)** — `D4JSP/0204f6e` deployed to KVM 4. Root cause: rapid gem-clicks had spawned 4 alive trolls in `forum_trolls`; killing ONE left 3 alive, so banner + gem state (driven by global `activeTrolls.length > 0`) stayed on. Fix: server-side concurrent-alive cap on spawn via new `triggers.config.max_alive_concurrent` (default 1), 429 with `blocked: 'concurrent_limit'`. DB cleanup: 4 stuck rows (`24f5a5cd`, `b05033f1`, `e9fe34b1`, `ce5fb43f`) set `killed_at=NOW(), hp=0` via service-role REST. `/api/forum-trolls` now returns `{"trolls":[]}`.
 - **#49 — Gem stops responding after trade cards mount (closed)** — `D4JSP/00013a0` deployed to KVM 4. Two issues: (1) gemPos was stuck on a 0-height measurement when the goblin image decoded after the 500ms setTimeout (slow mobile) — fixed via `<img onLoad>` re-measure; (2) gem zIndex 107 had only 1 step over cards-section z=106 — bumped to 109 (still below header z=110). Spot-check checklist below.
 - **#48 — Pre-tooltip-fix backup tag (closed)** — Tag `backup/2026-04-26-pre-tooltip` pushed to all 4 repos at current HEAD. Rollback target if tooltip work regresses anything.
 - **#47 — Gem stuck on after kill / despawn (closed)** — `D4JSP/3b4ebdf` deployed. Release path robust against realtime delivery semantics + passive despawn TTL.
@@ -19,6 +20,38 @@ The append-only ledger of user asks, what shipped, and how to roll back. **Read 
 - **#44 — Gem moved off hero illustration (closed)** — `D4JSP/7e1febf` deployed. Reverts zIndex 9999→107 from #42; gem returns to anchor on goblin's gem in Latest Trades banner.
 - **#43 — Wiki + memory architecture build (closed)** — `D4JSP/8767582` + `D4JSP-Admin/c43ac83` + `D4JSP-Build-Planner/4c0e85b` + `D4JSP-Map/976c0c9`. All 4 repos verified clean.
 - **#42 — Gem button regression fix (closed)** — `D4JSP/00ec198`. Click-flash restored after `c5d83c8` regression.
+
+---
+
+## #51 — Banner + gem stuck on after killing one troll while others alive
+- **Status:** closed (2026-04-26)
+- **Asked:** "nope fresh reload still stuck" / "even killed troll didn't reset" / "still says forum troll alive in banner too.. did that get stuck or sumtin and not even work?" → "just fix the fuckin thing already please" with explicit authorization for DB writes + push + deploy.
+- **Scope:** Make the banner/gem-on state correctly track WHATEVER number of trolls are alive — not just "I killed one, why is everything still on?". Prevent it from happening again at spawn time.
+- **Root cause:** Two problems, one underlying. When Adam clicked the gem rapidly during the #47/#49 iteration cycle, each click that hit the `gemTarget` chain successfully fired `forum_troll_spawned`. There was no concurrent-alive cap — only a `max_per_week` cap, which Adam hadn't hit yet. So **four** trolls ended up alive simultaneously in `forum_trolls` (rows `24f5a5cd…`, `b05033f1…`, `e9fe34b1…`, `ce5fb43f…`, all HP=3/3, `killed_at=null`, `despawn_at` in the future).
+  - Killing ONE of them on its thread/ticker correctly set `killed_at` on that row, but `activeTrolls` (driven by `GET /api/forum-trolls` returning ALL alive rows) still had length 3, so `trollActive` (`activeTrolls.length > 0`) stayed `true`. Banner + gem stuck on. The release-path fix from #47 was working correctly — there were just other trolls still alive.
+  - Underlying: at the modular-spine level, the `forum_troll_spawned` trigger config had no concept of "max simultaneously alive", only "max in 7 days". For a one-at-a-time troll experience, the spine needed a new config field.
+- **Fix (code, server-authoritative):** [`../../pages/api/quest-trigger.js`](../../pages/api/quest-trigger.js) — between the subscription gate and the existing `max_per_week` weekly check, added a new gate that runs only for `trigger_id === 'forum_troll_spawned'`:
+  - Reads `cfg.max_alive_concurrent` (defaults to `1` if unset).
+  - Counts `forum_trolls` rows where `killed_at IS NULL AND despawn_at > NOW()`.
+  - If `count >= max_alive_concurrent`, returns HTTP 429 with `{ blocked: 'concurrent_limit', limit, current, message }`.
+  - Client side ([`../../components/AppShell.js`](../../components/AppShell.js) `handleGemClick`): existing `weekly_limit` toast handler extended to also handle `concurrent_limit` — surfaces the server's message ("Forum Troll already lurking. Hunt him down before summoning another." for the default cap of 1).
+- **Fix (data, one-time cleanup):** Service-role PATCH on the 4 stuck alive rows in `forum_trolls`, setting `killed_at = NOW()` and `hp = 0`. Verified `GET /api/forum-trolls` then returned `{"trolls":[]}`. No structural DB change — those rows still exist for history, just no longer alive per the API filter.
+- **Commits:**
+  - `D4JSP/0204f6e` — `fix(troll-spawn): cap concurrent alive trolls (default 1) to prevent banner/gem stuck-on (#51)`
+- **Deployed:** KVM 4 via SSH `git pull && npm run build && pm2 reload d4jsp`. Background task `bn9bcjc5n` confirmed PM2 online, build complete, HTTP 200.
+- **Verification (checklist):**
+  - [ ] Fresh page load with no troll alive — banner absent, gem in normal state.
+  - [ ] Click gem repeatedly (try to spawn many trolls in a row) — first chain that hits `gemTarget` spawns ONE troll, banner appears, gem locks glow. Subsequent gem clicks while alive return 429 with `concurrent_limit` toast: "Forum Troll already lurking. Hunt him down before summoning another."
+  - [ ] Kill the troll on its thread/ticker until HP=0 — banner gone, gem returns to normal within ~1s. Gem becomes clickable again.
+  - [ ] Click gem after kill — fresh spawn allowed.
+  - [ ] Refresh page during alive state — banner + gem-on persisted (server-driven). Refresh after kill — both gone.
+  - [ ] Admin: edit `triggers` row for `forum_troll_spawned`, set `config.max_alive_concurrent = 3`, redeploy not needed (read each request). Spawn 3 trolls in a row → all succeed. 4th spawn → 429.
+  - [ ] Admin: set `config.max_alive_concurrent = 0` or remove the field → falls back to default 1 (NOT unlimited — this is a stricter default than `max_per_week` because banner/gem UX assumes one-at-a-time).
+  - [ ] Mobile + desktop both verified.
+- **Docs touched:** [`./catalogs/triggers.md`](./catalogs/triggers.md) — `max_alive_concurrent` config field added to the `forum_troll_spawned`-only block. [`./admin/quests-tab.md`](./admin/quests-tab.md) — admin editing instructions added. This batch-log entry.
+- **Rollback (code):** `git revert 0204f6e` then re-deploy. Brings back unlimited concurrent spawns. Existing `max_per_week` cap unaffected.
+- **Rollback (data):** N/A — the 4 cleanup PATCHes can't be undone meaningfully (those troll instances were ghosts, not real gameplay state). If a row ever needs revival: `UPDATE forum_trolls SET killed_at = NULL, hp = 3 WHERE id = '<uuid>'` via SQL editor.
+- **Why `max_alive_concurrent` defaults to 1, not unset/unlimited:** The banner + gem visual state is a global "is any troll alive" boolean (`activeTrolls.length > 0`). Multiple alive trolls are valid in the data layer but the UI is not built for it. Defaulting to 1 keeps UX coherent without requiring config to be set. Bumping to N is allowed if/when multi-troll UI ships.
 
 ---
 

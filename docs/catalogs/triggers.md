@@ -20,6 +20,7 @@ Event registry. Every event the system reacts to (gem click, signup, troll spawn
 - `on_expiry` — `auto_fire` (re-fire and reset) or `deactivate` (default)
 - `allowed_subscriptions` (string[]) — tier ids allowed to trigger; empty array = all
 - `max_per_week` (int) — **forum_troll_spawned only** (today). Caps GLOBAL spawns across all users in the trailing 7 days. Server enforces in [`../../pages/api/quest-trigger.js`](../../pages/api/quest-trigger.js); on cap returns 429 with `blocked: 'weekly_limit'`. Unset = unlimited. Added in #46 / `642c6ab`.
+- `max_alive_concurrent` (int) — **forum_troll_spawned only** (today). Caps the number of trolls that can be alive (`killed_at IS NULL AND despawn_at > NOW()`) at the same time across all users. Server enforces in [`../../pages/api/quest-trigger.js`](../../pages/api/quest-trigger.js); on cap returns 429 with `blocked: 'concurrent_limit'`. **Defaults to `1`** if unset (NOT unlimited — banner/gem visuals are a global "any alive" boolean and assume one-at-a-time UX). Added in #51 / `0204f6e`.
 - Per-trigger params (e.g. `min`/`max` click target on `forum_troll_spawned`)
 
 ## Known trigger ids in code
