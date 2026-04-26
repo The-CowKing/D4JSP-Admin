@@ -11,13 +11,39 @@ The append-only ledger of user asks, what shipped, and how to roll back. **Read 
 
 ## Live now
 
-- **#48 — Pre-tooltip-fix backup tag (closed)** — Tag `backup/2026-04-26-pre-tooltip` pushed to all 4 repos at current HEAD. Rollback target if tooltip work regresses anything. No code change.
-- **#47 — Gem stuck on after kill / despawn (closed)** — `D4JSP/3b4ebdf` deployed to KVM 4. Release path now robust against realtime delivery semantics + passive despawn TTL. Cause was NOT a code regression (gem state machine matches pre-migration `b438f1f`) and NOT KVM 4 nginx (Supabase realtime is browser↔Supabase direct, KVM 4 isn't in that path). Cause was client-side dependency on realtime UPDATE-to-killed delivery + no despawn timer. Spot-check checklist below.
+- **#49 — Gem stops responding after trade cards mount (closed)** — `D4JSP/00013a0` deployed to KVM 4. Two issues: (1) gemPos was stuck on a 0-height measurement when the goblin image decoded after the 500ms setTimeout (slow mobile) — fixed via `<img onLoad>` re-measure; (2) gem zIndex 107 had only 1 step over cards-section z=106 — bumped to 109 (still below header z=110). Spot-check checklist below.
+- **#48 — Pre-tooltip-fix backup tag (closed)** — Tag `backup/2026-04-26-pre-tooltip` pushed to all 4 repos at current HEAD. Rollback target if tooltip work regresses anything.
+- **#47 — Gem stuck on after kill / despawn (closed)** — `D4JSP/3b4ebdf` deployed. Release path robust against realtime delivery semantics + passive despawn TTL.
 - **#46 — Banner-only announcement, drop legacy spawn toast, weekly limit (closed)** — `D4JSP/642c6ab` deployed. Three independent visual elements: click-anim (local), gem-on (realtime), banner (realtime). Bottom-right spawn toast removed. Weekly spawn limit added on `triggers.config.max_per_week`.
 - **#45 — `/api/forum-trolls` cache + click-flash perception (closed)** — `D4JSP/bb200ce` deployed. Cache-Control: no-store, click-flash extended 180→320ms with snap-fast filter. Persistent glow now flips within ~1s of spawn instead of after 20s cache window.
 - **#44 — Gem moved off hero illustration (closed)** — `D4JSP/7e1febf` deployed. Reverts zIndex 9999→107 from #42; gem returns to anchor on goblin's gem in Latest Trades banner.
 - **#43 — Wiki + memory architecture build (closed)** — `D4JSP/8767582` + `D4JSP-Admin/c43ac83` + `D4JSP-Build-Planner/4c0e85b` + `D4JSP-Map/976c0c9`. All 4 repos verified clean.
 - **#42 — Gem button regression fix (closed)** — `D4JSP/00ec198`. Click-flash restored after `c5d83c8` regression.
+
+---
+
+## #49 — Gem stops responding after trade cards mount
+- **Status:** closed (2026-04-26)
+- **Asked:** "I just tried it when the page was loading trade cards wernt loseed it was working pushing up and down. maybe trade cards are blocking it.. cause they have push down hover animations too"
+- **Scope:** Restore gem responsiveness during AND after card-list mount. Symptom: gem worked during initial paint (cards not yet rendered, "pushing up and down" visible), froze after cards loaded.
+- **Root cause:** Two stacked issues, both fixed in one commit:
+  1. **gemPos staleness on slow networks.** [`../../components/HomeView.js:438-461`](../../components/HomeView.js) `measure()` runs on mount + window resize + a 500ms `setTimeout`. None of those fire when the goblin banner image actually finishes decoding. On slow mobile / throttled network the image can paint AFTER the 500ms timeout, leaving `gemPos` stuck on a measurement against a 0-height image. The clickable gem then renders at a near-zero coordinate, far from the artwork's gem.
+  2. **z-index headroom.** Gem at `zIndex: 107`, cards-section at `zIndex: 106` — only 1 step margin. Cards' framer-motion `whileHover` (translateY -1) and `whileTap` (scale 0.97) create per-card transform stacking contexts; combined with `marginTop: -48` pulling cards UP into the banner's vertical space, this margin was too tight. Cards mounting could occlude the gem visually or capture clicks at the boundary.
+- **Fix:**
+  1. Store `measure()` in `measureRef`; call it from the goblin `<img onLoad>` handler. Gem re-pins immediately when the image actually paints, regardless of network speed.
+  2. Bump gem `zIndex` 107 → 109. Three steps above cards, one step below the header (`zIndex: 110` — do NOT cross, that's the #44 regression).
+- **Commits:**
+  - `D4JSP/00013a0` — `fix(troll-gem): re-measure on goblin image onLoad + z-index 107->109 (#49)`
+- **Deployed:** KVM 4 via SSH `git pull && npm run build && pm2 reload d4jsp`. PM2 online, HTTP 200.
+- **Verification (checklist):**
+  - [ ] Fresh page load (cards not yet rendered) — gem clickable, click animation visible.
+  - [ ] After cards mount — gem still clickable, click animation still visible (the regression Adam reported).
+  - [ ] Throttle network to Slow 3G in dev tools, hard reload — gem still positioned correctly on goblin's gem (image-load late race).
+  - [ ] Hover a trade card (whileHover translateY) — gem position unaffected, still clickable.
+  - [ ] Tap a trade card (whileTap scale) — gem position unaffected, still clickable.
+  - [ ] Mobile (~375 px) and desktop (~1440 px) both verified.
+- **Docs touched:** [`./features/forum-troll-gem.md`](./features/forum-troll-gem.md) — new "Stacking context contract" subsection pinning the z=109 ceiling and the goblin onLoad re-measure as DO-NOT-BREAK invariants.
+- **Rollback:** `git revert 00013a0` then re-deploy. Brings back z=107 + no onLoad re-measure (re-introduces #49 root causes on slow networks). The `backup/2026-04-26-pre-tooltip` tag is one commit behind 00013a0; rolling back to the tag drops this fix too.
 
 ---
 

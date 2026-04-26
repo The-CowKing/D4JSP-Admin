@@ -27,6 +27,18 @@ The kill toast ("⚔️ Forum Troll slain! First Blood!") is a separate event (u
 - **Edit via:** admin Quests tab → trigger config for `forum_troll_spawned`. See [`../admin/quests-tab.md`](../admin/quests-tab.md).
 - **Don't hardcode the value** — the modular spine requires admin-editability.
 
+## Stacking context contract (#49)
+
+The gem's clickability across page-load lifecycle depends on two invariants. **DO NOT change either without re-testing both during-load and after-cards-loaded.**
+
+1. **`zIndex: 109` on the clickable gem `<img>`.** Three steps above cards-section (`zIndex: 106`) and one step below the header (`zIndex: 110`).
+   - Card stacking budget: cards-section at z=106 contains all cards. Cards use framer-motion `whileHover` (translateY -1) and `whileTap` (scale 0.97), each creating per-card transform stacking contexts bounded by z=106. With `marginTop: -48` pulling cards up into the banner area, a 1-step margin (z=107 vs z=106) was too tight (#49 regression). z=109 gives 3 steps of headroom.
+   - Header upper bound: header is `zIndex: 110`. Crossing 110 makes the gem float into the header bar (the #44 regression). 109 is the ceiling.
+   - **DO NOT raise to z=9999 or any value ≥110**, and DO NOT lower below 109 without verifying card-mount no longer occludes.
+
+2. **`<img src="/images/latest-trades-goblin.png" onLoad={() => measureRef.current?.()}>`.** The gem position (`gemPos`) is computed from the goblin image's bounding rect at 65.7%/81%/11%. On slow mobile / throttled network the image can decode AFTER the 500ms `setTimeout` re-measure fires, leaving `gemPos` stuck on a 0-height measurement. The `onLoad` handler re-runs `measure()` synchronously when the image paints — not optional, **DO NOT remove**.
+   - `measureRef` is a stable ref set inside the `useEffect` that owns `measure()`. The effect is deps-empty (mount-only) so the ref is stable for the component's lifetime.
+
 ## Cache contract for `/api/forum-trolls`
 
 `Cache-Control: no-store` on the GET. **DO NOT re-add `s-maxage` / `stale-while-revalidate`** — the 2-min idle poll on a single-row select is cheap, and any cache window will mask realtime spawns (the empty list gets cached pre-spawn and returned post-spawn until expiry). #45 root cause.
