@@ -1,6 +1,35 @@
 # Feature: Forum Troll Gem
 
-The clickable gem on the Latest Trades header. Click it enough times and it spawns a forum troll: a `forum_trolls` row with HP, despawn timer, attached to a random thread, broadcast in realtime to every connected client. Hits the gem fast → flash. While a troll is alive → gem locks into a dim pressed glow. When the troll dies or despawns → gem releases.
+The clickable gem on the Latest Trades hero illustration. Click it enough times and it spawns a forum troll: a `forum_trolls` row with HP, despawn timer, attached to a random thread, broadcast in realtime to every connected client. While a troll is alive → gem locks into a dim pressed glow AND the EventTicker banner shows "The Forum Troll is Lurking..." When the troll dies or despawns → both release.
+
+## Behavior — DO NOT BREAK (#46 contract)
+
+Three independent visual elements. Each has a different state source. Don't bind them together; don't introduce a fourth.
+
+| Element | Driven by | Renders | Notes |
+|---|---|---|---|
+| **Click animation** | local `gemFlash` state in [`../../components/HomeView.js`](../../components/HomeView.js) | brightness(2.5) + drop-shadow purple + scale(0.88) for 320ms (filter snap-in 0.06s) | Fires on every click. Independent of realtime. Restored in #45 / `bb200ce` after a c5d83c8 regression. |
+| **Gem-on / glow** | realtime `trollActive` (= `activeTrolls.length > 0` in AppShell) | `.gem-pressed` class — brightness(0.85) + drop-shadow + scale(0.88) `!important` | Continuous while troll alive. Supplementary cue, not primary announcement. |
+| **Banner** | same realtime `trollActive` | EventTicker scrolling marquee with "🧌 The Forum Troll is Lurking..." | **Primary announcement.** Single source of UI feedback for spawn. |
+
+**Deprecated, do NOT re-introduce:**
+- Bottom-right corner toast/shout-out for troll spawn ("🧌 Forum Troll summoned!"). Removed in #46. The banner is the announcement; toast was redundant noise per Adam.
+- Any other troll-spawn signal beyond the three above.
+
+The kill toast ("⚔️ Forum Troll slain! First Blood!") is a separate event (user achievement on kill) and remains in place.
+
+## Spawn rate limit (#46)
+
+- **Config field:** `triggers.config.max_per_week` (jsonb integer).
+- **Scope:** GLOBAL — counts spawns across all users in the trailing 7 days.
+- **Default:** unset/null = no limit.
+- **Enforcement:** server-side in [`../../pages/api/quest-trigger.js`](../../pages/api/quest-trigger.js). When the count hits the limit, returns HTTP 429 with `{ blocked: 'weekly_limit', limit, current, message }`. Frontend surfaces the message via `showToast(_, 'err')`.
+- **Edit via:** admin Quests tab → trigger config for `forum_troll_spawned`. See [`../admin/quests-tab.md`](../admin/quests-tab.md).
+- **Don't hardcode the value** — the modular spine requires admin-editability.
+
+## Cache contract for `/api/forum-trolls`
+
+`Cache-Control: no-store` on the GET. **DO NOT re-add `s-maxage` / `stale-while-revalidate`** — the 2-min idle poll on a single-row select is cheap, and any cache window will mask realtime spawns (the empty list gets cached pre-spawn and returned post-spawn until expiry). #45 root cause.
 
 ## UI
 

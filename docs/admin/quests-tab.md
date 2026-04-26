@@ -15,6 +15,7 @@ To change troll behavior:
 - Click chain target: edit `triggers.config.min` / `max`.
 - Tier gate: edit `triggers.config.allowed_subscriptions`.
 - Lifecycle: edit `triggers.config` (`expires_after`, `recurring`, `on_expiry`).
+- **Weekly spawn limit (global): edit `triggers.config.max_per_week`** to an integer. Counts spawns across all users in the trailing 7 days. Hitting the cap returns HTTP 429 to the user with a clear message. Unset/null = no limit. Added in #46.
 
 ## Related
 

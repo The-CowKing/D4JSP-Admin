@@ -11,9 +11,51 @@ The append-only ledger of user asks, what shipped, and how to roll back. **Read 
 
 ## Live now
 
-- **#44 — Gem moved off hero illustration (closed)** — `D4JSP/7e1febf` deployed to KVM 4 (HTTP 200, PM2 online). Reverts zIndex 9999→107 from #42; gem returns to anchor on goblin's gem in Latest Trades banner. Spot-check checklist below.
-- **#43 — Wiki + memory architecture build (closed)** — `D4JSP/8767582` + `D4JSP-Admin/c43ac83` + `D4JSP-Build-Planner/4c0e85b` + `D4JSP-Map/976c0c9`. All 4 repos verified clean. Spot-check checklist below.
-- **#42 — Gem button regression fix (closed)** — `D4JSP/00ec198` deployed to KVM 4. Click-flash restored. Persistent-glow PARTIALLY broken (root cause = forum-trolls cache; logged in `_doc-debt.md` for follow-up).
+- **#46 — Banner-only announcement, drop legacy spawn toast, weekly limit (closed)** — `D4JSP/642c6ab` deployed to KVM 4. Three independent visual elements: click-anim (local), gem-on (realtime), banner (realtime). Bottom-right spawn toast removed. Weekly spawn limit added on `triggers.config.max_per_week` (admin-editable). Spot-check checklist below.
+- **#45 — `/api/forum-trolls` cache + click-flash perception (closed)** — `D4JSP/bb200ce` deployed. Cache-Control: no-store, click-flash extended 180→320ms with snap-fast filter. Persistent glow now flips within ~1s of spawn instead of after 20s cache window.
+- **#44 — Gem moved off hero illustration (closed)** — `D4JSP/7e1febf` deployed. Reverts zIndex 9999→107 from #42; gem returns to anchor on goblin's gem in Latest Trades banner.
+- **#43 — Wiki + memory architecture build (closed)** — `D4JSP/8767582` + `D4JSP-Admin/c43ac83` + `D4JSP-Build-Planner/4c0e85b` + `D4JSP-Map/976c0c9`. All 4 repos verified clean.
+- **#42 — Gem button regression fix (closed)** — `D4JSP/00ec198`. Click-flash restored after `c5d83c8` regression.
+
+---
+
+## #46 — Banner-only announcement, drop legacy spawn toast, weekly spawn limit
+- **Status:** closed (2026-04-26)
+- **Asked:** "the only announcement should be the banner saying he is lurking going forward.. too much call out bull shit right hand lower corner doesn't need... it's config should have how many times he can spawn a week too." Then revised: "the gem should have its usual click animation and just stay on when he's alive then back to normal when he's dead. pretty fuckin simple."
+- **Scope:** Three independent visual elements going forward — click-anim (local), gem-on (realtime), banner (realtime). Drop the legacy bottom-right "Forum Troll summoned!" toast. Add admin-editable weekly spawn limit per the modular spine (no hardcoded values).
+- **Commits:**
+  - `D4JSP/642c6ab` — `feat(troll): banner-only announcement, drop legacy spawn toast, weekly spawn limit`
+- **Deployed:** KVM 4 via `git pull && npm run build && pm2 reload d4jsp`. PM2 online, HTTP 200.
+- **Verification (checklist):**
+  - [ ] Click gem — usual click animation visible (the boost from #45 is intact).
+  - [ ] Within ~1s of clicks reaching `gemTarget` — banner appears: "The Forum Troll is Lurking..." (or current copy).
+  - [ ] Within ~1s — gem enters glow state (supplementary cue).
+  - [ ] Bottom-right corner shows NO toast/shout-out for the spawn.
+  - [ ] Refresh page while alive — banner still showing, gem still glowing.
+  - [ ] Troll killed/despawned — banner gone, gem returns to normal.
+  - [ ] Try to spawn past weekly limit — blocked with clear toast: "Forum Troll already spawned N time(s) this week (limit: M)."
+  - [ ] Mobile and desktop both verified.
+- **Docs touched:** [`./features/forum-troll-gem.md`](./features/forum-troll-gem.md) "Behavior — DO NOT BREAK" section pinning the three independent visuals + the new weekly limit. [`./catalogs/triggers.md`](./catalogs/triggers.md) — `max_per_week` config field. [`./admin/quests-tab.md`](./admin/quests-tab.md) — how admin edits the limit.
+- **Rollback:** `git revert 642c6ab` then re-deploy. Brings back the spawn toast and removes the weekly limit. No DB schema changes (config is jsonb on existing `triggers` row).
+- **Configuring the weekly limit:** admin UI → Quests tab → edit `forum_troll_spawned` trigger config → set `max_per_week` to an integer. Unset/null = no limit. Counts global spawns in the trailing 7 days across all users.
+
+---
+
+## #45 — `/api/forum-trolls` cache hides spawns + click-flash sub-perceptible
+- **Status:** closed (2026-04-26)
+- **Asked:** "the bottom shout out said spawned 0 animation 0 glow"
+- **Scope:** (1) Drop the 20s cache on the forum-trolls API so realtime spawns aren't masked. (2) Make the click-flash actually perceptible on a small mobile gem.
+- **Root cause:** `Cache-Control: public, s-maxage=20, stale-while-revalidate=10` on the GET response meant Hostinger/nginx returned the pre-spawn empty list for 20s after a spawn. Realtime fired AppShell's refetch, but the cached response stayed empty, so `activeTrolls.length` stayed 0 and `trollActive` never flipped. Separately, click-flash held for only 180ms with a 0.18s filter transition — brightness barely peaked before flipping back, sub-perceptible on mobile.
+- **Commits:**
+  - `D4JSP/bb200ce` — `fix(troll-gem): drop forum-trolls API cache + extend click-flash for mobile perception`
+- **Deployed:** KVM 4. Verified `/api/forum-trolls` returns `Cache-Control: no-store`.
+- **Verification (checklist):**
+  - [ ] Click gem — flash visible (320ms hold, 0.06s transition).
+  - [ ] Within ~1s of spawn — gem enters persistent glow.
+  - [ ] No 20s delay between spawn and glow.
+  - [ ] Mobile + desktop both verified.
+- **Docs touched:** [`./features/forum-troll-gem.md`](./features/forum-troll-gem.md). [`./_doc-debt.md`](./_doc-debt.md) — persistent-glow item cleared.
+- **Rollback:** `git revert bb200ce` then re-deploy. Restores the cache header (re-introduces #45 root cause).
 
 ---
 
