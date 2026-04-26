@@ -13,6 +13,14 @@ One line per item:
 
 *(empty)*
 
+## Future cleanup (deferred — tracked here so they're not lost)
+
+These are known cleanups that are NOT blocking any current feature. Promote to active debt when the area is being worked on.
+
+- **Rename `/api/paddle-ocr` → `/api/ocr`.** Engine is RapidOCR; route name is legacy. Frontend `AppShell.js _doOcrFetch` URL needs to update with the route. Behavior change requiring a deploy. See [`./features/sell-pipeline.md`](./features/sell-pipeline.md) "Future cleanup".
+- **Remove `.bak` files from `/opt/d4jsp-ocr/`** on KVM 2 — `ocr_server.py.paddle_bak`, `ocr_server.py.bak.pre-cluster.*`, `ocr_server.py.bak.pre-port-fix`. Historical, not used at runtime.
+- **Re-establish D4JSP-Admin GitHub repo** as source of truth (currently edited in-place on KVM 2). See finding CS-2 in [`./audits/2026-04-26.md`](./audits/2026-04-26.md).
+
 ---
 
 ## How to use

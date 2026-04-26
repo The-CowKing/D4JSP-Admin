@@ -211,6 +211,33 @@ For the connected-systems integration map (every edge labeled), see [`docs/infra
 
 ---
 
+# § Infrastructure at a glance
+
+| Surface | Where | Ports | Supervisor | Doc |
+|---|---|---|---|---|
+| **KVM 4** — Trade Core | Hostinger VPS `177.7.32.128` | 3000 (Next.js, public via nginx) | PM2 `d4jsp` (cluster) | [`docs/infra/kvm-4.md`](./docs/infra/kvm-4.md) |
+| **KVM 2** — Admin app | Hostinger VPS `187.124.239.213` | 3001 (bound to localhost; surfaced at `trade.d4jsp.org/admin-panel/*` via KVM 4 nginx) | PM2 `d4jsp-admin` (cluster) | [`docs/infra/kvm-2.md`](./docs/infra/kvm-2.md) |
+| **KVM 2** — RapidOCR | same VPS | **9000** public via nginx → **8000** uvicorn | **systemd** `d4jsp-ocr.service`, uvicorn 3 workers | [`docs/infra/kvm-2.md`](./docs/infra/kvm-2.md) |
+| **KVM 2** — Tooltip | same VPS | 3100 | PM2 `d4jsp-tooltip` (fork) | [`docs/infra/kvm-2.md`](./docs/infra/kvm-2.md) |
+| **Cloud** — WordPress federation | Hostinger Cloud `82.29.193.20:65002` | n/a | LiteSpeed + cPanel | [`docs/infra/cloud.md`](./docs/infra/cloud.md) |
+| **Supabase** — Postgres + Auth + Realtime + Storage | `isjkdbmfxpxuuloqosib.supabase.co`, Pro plan | n/a | provider-managed | [`docs/infra/supabase.md`](./docs/infra/supabase.md) |
+| **Stripe** — payments | dashboard | n/a | provider-managed | [`docs/integrations/stripe.md`](./docs/integrations/stripe.md) |
+| **Resend** — transactional email | dashboard | n/a | provider-managed | [`docs/integrations/resend.md`](./docs/integrations/resend.md) |
+| **VAPID Web Push** — browser notifications | `web-push` server-side | n/a | provider-managed | [`docs/integrations/web-push.md`](./docs/integrations/web-push.md) |
+| **OAuth providers** — Google + Battle.net | Cloud Console `d4jsp-491120` + develop.battle.net | n/a | provider-managed | [`docs/auth/providers.md`](./docs/auth/providers.md) |
+| **DNS** — domain registrar | GoDaddy (19 domains) | n/a | provider-managed | [`docs/infra/dns-tls.md`](./docs/infra/dns-tls.md) |
+| **TLS** — Let's Encrypt | KVM 4/2 certbot, Hostinger-managed for Cloud | n/a | systemd timer (KVM) / provider | [`docs/infra/dns-tls.md`](./docs/infra/dns-tls.md) |
+| **Static** — Build Planner | nginx on KVM 4 at `/builder` | n/a | static export, no runtime | [`docs/infra/kvm-4.md`](./docs/infra/kvm-4.md), [`docs/features/build-planner.md`](./docs/features/build-planner.md) |
+| **Static** — Map | nginx on KVM 4 (iframed in Profile) | n/a | static, no runtime | [`docs/features/map-iframe.md`](./docs/features/map-iframe.md) |
+
+For the integration map (every edge labeled): [`docs/infra/connected-systems.md`](./docs/infra/connected-systems.md).
+
+For credentials lookup: [`docs/infra/credentials.md`](./docs/infra/credentials.md).
+
+For deploy procedures: [`docs/infra/deploy.md`](./docs/infra/deploy.md) and (for sandbox-restricted sessions) [`docs/infra/deploy-bat-pattern.md`](./docs/infra/deploy-bat-pattern.md).
+
+---
+
 # § Site map (every URL/route)
 
 Full per-route inventory: [`docs/sitemap.md`](./docs/sitemap.md).
