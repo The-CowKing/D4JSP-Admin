@@ -2,27 +2,48 @@
 
 The canonical FG transaction history. Append-only.
 
-## Schema
+## ⚠ Schema reality vs. plan (#66)
+
+The production schema is **entity-based** (the original genesis-mint shape). The uid-based shape originally documented here describes a planned migration that has not been applied. Writing to `from_uid`/`to_uid`/`reason`/`ref_id` columns produces `code: '42703' "column fg_ledger.<col> does not exist"` errors that bubble through every API route that calls them. #66 root cause was exactly this — the spawn quest reward grant threw on `from_uid` and broke gem clicks entirely.
+
+Authoritative writers MUST use the actual schema below until the uid migration is shipped + verified in prod.
+
+## Actual production schema
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | bigserial PK | |
-| `from_uid` | uuid nullable | NULL = vault (issuance) |
-| `to_uid` | uuid nullable | NULL = vault (burn) |
+| `tx_type` | text | `'mint'` (genesis), `'grant'` (vault → user from quest/gamble/admin), `'transfer'`, `'burn'`, `'purchase'`, `'escrow_hold'`/`'escrow_release'`/`'escrow_refund'`, etc. |
+| `from_entity` | text | `'vault'`, `'user:<uuid>'`, `'escrow:<uuid>'`, `'genesis'`. Free-form text. |
+| `to_entity` | text | same shape as `from_entity`. |
 | `amount` | int | always positive |
-| `reason` | text | `purchase` / `transfer` / `grant` / `escrow_hold` / `escrow_release` / `escrow_refund` / `burn` / `signup_grant` / `account_deleted_return_to_vault` / etc. |
-| `ref_id` | text | escrow.id, special_claims.id, stripe payment_id, etc. |
-| `admin_id` | uuid nullable | when reason involves admin action |
+| `serial_start` | bigint nullable | for genesis mint; not used for grants |
+| `serial_end` | bigint nullable | same |
+| `memo` | text | human-readable description, often `'<reason>:<ref_id>'` (e.g., `'quest_complete:<quest_uuid>'`). |
+| `tx_hash` | text nullable | reserved |
+| `metadata` | jsonb | `{ user_id, quest_id, source, ... }` — reconciliation joins go here. |
 | `created_at` | timestamptz | |
 
-## Indexes
+## Reconciliation
 
-- `idx_fg_ledger_from` on `from_uid WHERE from_uid IS NOT NULL`
-- `idx_fg_ledger_to` on `to_uid WHERE to_uid IS NOT NULL`
+User balance reconciliation joins on `metadata->>'user_id'` (jsonb extraction) since there's no native uid column. Sum:
+```sql
+SELECT
+  metadata->>'user_id' AS uid,
+  SUM(CASE WHEN to_entity = 'user:' || (metadata->>'user_id') THEN amount ELSE 0 END) AS credited,
+  SUM(CASE WHEN from_entity = 'user:' || (metadata->>'user_id') THEN amount ELSE 0 END) AS debited
+FROM fg_ledger
+WHERE metadata->>'user_id' IS NOT NULL
+GROUP BY metadata->>'user_id';
+```
+
+## Planned uid migration (NOT YET APPLIED)
+
+The doc previously listed `from_uid uuid`, `to_uid uuid`, `reason text`, `ref_id text`, `admin_id uuid` — that's the target schema for cleaner querying, but the migration that adds those columns has never been run on production. Don't reference them in code until the migration ships AND is verified by Adam.
 
 ## RLS
 
-User can SELECT rows where they are `from_uid` or `to_uid`. No client INSERT.
+User can SELECT rows where `to_entity = 'user:' || auth.uid()::text` or `from_entity = 'user:' || auth.uid()::text`. No client INSERT.
 
 ## Authoritative writers
 
