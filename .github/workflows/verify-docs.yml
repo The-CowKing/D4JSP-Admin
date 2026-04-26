@@ -1,0 +1,27 @@
+name: verify-docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'start.md'
+      - 'scripts/verify-docs.js'
+      - '.github/workflows/verify-docs.yml'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'start.md'
+      - 'scripts/verify-docs.js'
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Verify wiki
+        run: node scripts/verify-docs.js
