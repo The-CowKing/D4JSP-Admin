@@ -6,13 +6,45 @@ The clickable gem on the Latest Trades header. Click it enough times and it spaw
 
 - **Page:** `/` (Latest Trades home).
 - **Mounted in:** [`../../components/AppShell.js`](../../components/AppShell.js) — gem state and click handler live here.
-- **Rendered by:** [`../../components/HomeView.js:833-877`](../../components/HomeView.js) — the `<img>` element + the `gem-pressed` style block. The `<img>` is positioned absolutely at `gemPos` (computed from the banner image's bounding rect) with `zIndex: 9999` to beat the header (z=110), cards (z=106), and decorative frame (z=105).
+- **Rendered by:** [`../../components/HomeView.js:833-877`](../../components/HomeView.js) — the `<img>` element + the `gem-pressed` style block. The `<img>` is positioned absolutely at `gemPos` (computed from the banner image's bounding rect) with `zIndex: 107`.
+
+## Layout — DO NOT MOVE (#44 contract)
+
+The gem is anchored on top of the goblin's illustrated gem in the Latest Trades banner. Position is responsive and was hard-won across mobile and desktop. Don't change it without re-verifying both breakpoints.
+
+### Anchor strategy
+- **Computed in** [`HomeView.js:438-458`](../../components/HomeView.js) `useEffect` `measure()` function.
+- **Math:**
+  ```js
+  setGemPos({
+    top:  iRect.top  - pRect.top  + iRect.height * 0.81,
+    left: iRect.left - pRect.left + iRect.width  * 0.657,
+    size: iRect.width * 0.11,
+  });
+  ```
+- `iRect` = banner image (`/images/latest-trades-goblin.png`) bounding rect.
+- `pRect` = nearest positioned ancestor (the `motion.div` wrapper at `position: relative`).
+- **Percentages** (do NOT change without re-measuring against the artwork): `65.7%` across, `81%` down, `11%` wide. These pin the gem on the goblin's central illustrated gem at every viewport width because they're percentages of the rendered image, not of the viewport.
+- **Recomputes on** mount, `window.resize`, and a 500ms post-mount retry (covers slow image load).
+
+### Z-index rule
+- **`zIndex: 107`** — sits above cards (z=106) and the decorative frame (z=105) but BELOW the header (z=110).
+- **DO NOT raise above the header** (e.g. 9999). The header's screen area doesn't overlap the gem's computed position (the gem lives inside the banner area which is below the header on screen). Raising z above 110 makes the gem visually float up in the header bar near the avatar — that was the #44 regression. If the gem ever appears truly clipped by the header, the fix is to relocate `gemPos`, NOT to raise z.
+
+### Responsive verification points
+- **Mobile (~375 px width)** — gem must overlay the goblin's illustrated gem.
+- **Desktop (~1440 px width)** — same.
+- **Resize between** — gem must stay locked, no jump.
+- The percentage-based math handles all of these automatically; if it visually drifts, suspect (a) `iRect` is being measured before the image fully loads, or (b) the parent stacking context shifted.
+
+### Static placeholder
+[`HomeView.js:886-888`](../../components/HomeView.js) renders a non-clickable decorative gem inside the banner div with `pointerEvents: 'none'`, positioned at `left: 65.7%, top: 81%, width: 11%`. Same percentages as the clickable gem. Visible during the ~500 ms before `gemPos` is measured. The clickable absolute gem paints over it once measured.
 - **States:**
   - **Idle:** no class, inline `transform: translate(-50%,-50%) scale(1)`, `filter: drop-shadow(0 0 8px rgba(139,92,246,0.5))`.
   - **Click flash (180 ms):** `gemFlash=true` → inline `scale(0.88)` + `filter: brightness(2.5) drop-shadow(0 0 6px #a855f7)`. **No `gem-pressed` class** — that's the regression that caused the frozen-gem bug; see [`../audits/2026-04-26.md`](../audits/2026-04-26.md) and `_batch-log.md` entry #42.
   - **Persistent pressed (troll alive):** `trollActive=true` → `className='gem-button gem-pressed'`. The class adds `transform: scale(0.88) !important` + `filter: brightness(0.85) drop-shadow(0 0 6px rgba(139,92,246,0.55)) !important`. The `!important` rules survive parent CSS overrides during a live troll. Inline values still apply for the click-flash window.
 - **Click handler:** [`HomeView.js:837-841`](../../components/HomeView.js) sets `gemFlash=true` for 180ms then calls `onGemClick` (passed in from AppShell as `handleGemClick`).
-- **Visual placeholder:** [`HomeView.js:886-888`](../../components/HomeView.js) renders a non-clickable static gem image inside the banner with `pointerEvents: 'none'`. Visible while `gemPos` is being measured (~500ms post-mount). The clickable absolute gem at z=9999 paints over it.
+- **Visual placeholder:** see Layout section above.
 
 ## Click → spawn flow
 
@@ -104,7 +136,8 @@ Server decrements HP. When HP hits 0:
 
 ## Recent changes
 
-- **2026-04-26 `00ec198`** — Restored click-flash + persistent-pressed glow. The previous commit (`c5d83c8`) had layered `.gem-pressed` on `gemFlash || trollActive`, masking click-flash visuals. Now the class applies only on `trollActive`. Bumped zIndex 107 → 9999 to clear header z=110.
+- **2026-04-26 `7e1febf`** — Reverted zIndex 9999 → 107 (regression #44). 9999 made the gem float above the header detached from the goblin; 107 keeps it locked on the artwork.
+- **2026-04-26 `00ec198`** — Restored click-flash by removing `gem-pressed` class application during `gemFlash` (the class's `!important` filter was masking the click-flash brightness). Click flash now uses inline style alone. (Persistent-glow regression introduced here is being tracked separately — see `_doc-debt.md` "Persistent gem-glow not actually persistent".)
 - **2026-04-26 `758b2aa`** (Patch 5) — Bulletproof `.gem-pressed` class with `!important` rules. Persistent-press now survives parent CSS overrides.
 - **2026-04-26 `b438f1f`** (Patch 2) — Realtime sub on `forum_trolls`, hydrate-on-mount, 2-min poll fallback.
 - **2026-04-26 (Patch 1, SQL)** — `forum_trolls` added to `supabase_realtime` publication.
