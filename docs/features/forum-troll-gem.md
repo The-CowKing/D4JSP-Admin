@@ -68,6 +68,31 @@ History:
 
 If a future requirement needs richer per-thread troll UX (e.g., per-troll animation), implement it inside the AppShell render path — not by adding a second sub.
 
+## Banner = single source of truth (#59 contract)
+
+Whenever the server believes any troll is alive (`killed_at IS NULL AND despawn_at > NOW()`), the AppShell-rendered "FORUM TROLL SIGHTED!" banner MUST be visible to a user on the affected thread within ~1s of any user interaction. There is no "secondary" announcement surface — no corner toasts, no in-thread banners, no notifications — for a currently-alive troll.
+
+Server-truth → client-state hydration paths:
+1. **Mount.** AppShell's `forum-trolls-global` sub fires `refetch('mount')` immediately on user-id presence.
+2. **Realtime.** Any INSERT/UPDATE/DELETE on `forum_trolls` triggers `refetch('realtime:<eventType>')`.
+3. **Defensive after-action refetch.** `handleGemClick` calls `refetchRef.current?.('concurrent-blocked')` if the server returns `concurrent_limit` — reconciles a state desync immediately.
+4. **2-min idle poll.** Last-resort fallback for WS drops.
+5. **Despawn timer.** `setTimeout` at min(despawn_at) + 250ms fires `refetch('despawn')`.
+
+**DO NOT add a corner toast for `concurrent_limit`** — Adam called it out as redundant noise next to the banner. The toast is reserved for `weekly_limit` (different semantic — no banner state to convey "you're done for the week"). The release path already trusts server truth via #47's `isAlive` filter.
+
+## Gem locked when alive (#59 contract)
+
+When `trollActive=true` (any alive troll exists), the gem button MUST be a no-op on click. No click-flash, no API call, no toast.
+
+Implementation has two layers:
+1. **`HomeView.js` gem `<img>` onClick** — early-returns on `if (trollActive) return;` BEFORE setting `gemFlash` so even the visual click feedback is suppressed.
+2. **`AppShell.js handleGemClick`** — defensive `if (activeTrolls.length > 0) return;` guards against a stale-state race where the prop is fresh but a click is already in flight.
+
+Visual feedback that the gem is locked is provided by the persistent `.gem-pressed` class (added when `trollActive=true`) — `brightness(0.85) + drop-shadow purple !important` + `scale(0.88) !important`. The user gets visual confirmation without an API round-trip.
+
+**DO NOT** remove either early-return. Without them, a stale-state race produces the corner-toast nag (Adam's #59 root complaint) AND wastes API calls + click-flash on no-op clicks.
+
 ## HIT failure feedback contract (#56)
 
 `AppShell.handleTrollHit` MUST surface a visible toast on every non-success path. The original code dropped non-`ok` responses into a no-op branch which manifested as Adam's "clicking hit doesn't do anything" regression. Pinned paths:

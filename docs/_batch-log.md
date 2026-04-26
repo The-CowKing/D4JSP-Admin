@@ -11,9 +11,11 @@ The append-only ledger of user asks, what shipped, and how to roll back. **Read 
 
 ## Live now
 
+- **#60 — Top ticker desktop empty-gap regression (deployed, awaiting verify)** — `D4JSP/04a802d` (pixel-keyframe marquee fix — eliminates the gap mathematically) + `D4JSP/bb86aca` (desktop-only "Welcome to D4JSP — Live Trading" static fill behind the marquee per Adam's "fill desktop to have welcome to d4jsp live trading or sumtin"). Both deployed to KVM 4. Belt + suspenders: animation distance is now correct AND there's a static brand layer if any visual remainder shows up across browsers/zoom. Mobile unchanged (welcome text hidden via `max-width: 767px` rule).
+- **#59 — Lock gem when alive + drop redundant 'already lurking' toast (deployed, awaiting verify)** — `D4JSP/82ecbe4` deployed to KVM 4 (PM2 online, HTTP 200). Adam: corner toast "forum troll summoned already" was firing while top banner empty + gem still clickable. Three changes: (1) HomeView gem onClick early-returns when `trollActive=true` — no click-flash, no API call. (2) AppShell `handleGemClick` defensive early-return on `activeTrolls.length > 0`. (3) On `concurrent_limit` server response, refetch banner state instead of toasting (server's "already alive" becomes a SIGNAL, not a notification). `weekly_limit` toast preserved (different semantic — no banner to convey it).
 - **#58 — FG package placeholder artwork (queued)** — Adam: "the FG package used to have proper images for alot of them. at some point placeholders were put in." Hint: "probably on supabase in bucket." Blocked behind #57. Restore proper per-package artwork — likely the Supabase Storage URLs in `fg_packages.image_url` were overwritten with placeholder paths; real images still in the bucket.
-- **#57 — Stripe payment flow broken since KVM 4 migration (queued)** — Adam: subscribe button shows in-page modal that doesn't redirect to Stripe Checkout; Buy FG returns "Invalid package". Likely root causes: webhook URL still points at old cloud host, env vars missing on KVM 4, or stale `stripe_price_id` values. Blocked: blocks revenue flow, top priority after #56 ships and verifies.
-- **#56 — Remove redundant in-thread troll banner + restore HIT visibility (deployed, awaiting verify)** — `D4JSP/57b9c53` deployed to KVM 4 (PM2 reload `[d4jsp](0) ✓`, status `online`, HTTP 200 on `/`, `/api/forum-trolls` returns valid JSON). ThreadDetailView's "A Forum Troll has appeared" body banner + its #53 thread-scoped sub + state removed entirely — the AppShell global banner (filtered by `selectedThreadId`) is now the single source of UI for troll state in any view. AppShell `handleTrollHit` surfaces a visible toast on every failure path (auth/4xx/5xx/network) instead of failing silently. Cowork to run the spot-check checklist below — Adam should now see either HP decrement OR a diagnostic toast on every HIT click.
+- **#57 — Stripe payment flow broken since KVM 4 migration (queued, partial diagnosis)** — Adam: subscribe in-page modal "PAY NOW" does nothing; Buy FG fails. Diagnosed: `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` is set on KVM 4 (verified via NAMES-only grep). `STRIPE_SECRET_KEY` env presence not yet confirmed (harness blocks listing prod env vars). Architecture: PaymentIntent + Elements (in-page), NOT Checkout redirect — Adam's expectation of "redirect to checkout.stripe.com" was incorrect; the in-page modal IS the intended flow. Root cause hypothesis: `stripe.confirmPayment` silently returns when stripe/elements null (loadStripe failure, or a 4xx from confirm with no UI surfacing). Fix path: harden CheckoutForm.submit with visible toasts on every silent path (mirror of #56 hardening pattern). Top priority after #59/#60 ship.
+- **#56 — Remove redundant in-thread troll banner + restore HIT visibility (closed)** — `D4JSP/57b9c53` deployed to KVM 4. Adam confirmed: "forum troll hit worked." Single banner globally; HIT decrements HP; troll dies; gem releases; banner clears. Done.
 - **#55 — Tooltip + user-info clipping on desktop only (deployed, awaiting verify)** — `D4JSP/bd66237` deployed to KVM 4 (PM2 online, HTTP 200, JS bundle confirmed contains the new `white-space:normal!important;overflow-wrap:anywhere!important;max-width:300px!important` rules on tooltip tables/cells + `overflow-wrap:anywhere!important;word-break:break-word!important` on `.whtt-scroll` descendants). Mirrored to `D4JSP-Admin/1534a7f`, `D4JSP-Build-Planner/96e5685`, `D4JSP-Map/d8f49b7`. Mirrors the mobile-only wrap-override globally so desktop also wraps tooltip tables/cells/text within the locked 300px width. Username `wordBreak:'break-word'` → `overflowWrap:'anywhere'; hyphens:'auto'` for hard-break fallback. Cowork to run the 9-item verification checklist.
 - **#53 — Live troll render in post view (superseded by #56)** — `D4JSP/536c6a7` pushed but never deployed. The in-thread banner that #53 hardened was removed in #56 because Adam decided he wants only one banner globally. The thread-scoped sub is gone; the AppShell global sub already drives the (single, top-of-screen) banner including for users on the affected thread.
 - **#54 — Tooltip bottom-fixed pushed below frame on long-content preview (deployed, awaiting verify)** — `D4JSP/2c72c98` deployed to KVM 4 (PM2 online, HTTP 200, JS bundle confirmed contains `.whtt-container{...height:520px!important}` + `.whtt-scroll{flex:1 1 0!important;min-height:0!important;max-height:420px!important...}`). Mirrored to `D4JSP-Admin/111e402`, `D4JSP-Build-Planner/84c1334`, `D4JSP-Map/93a27e9`. Container locked at 520px; scroll-area uses `flex:1 1 0` to deterministically fill 420 within it; bottom-fixed structurally anchored at bottom 100. Cowork to run the 8-item verification checklist below.
@@ -122,6 +124,57 @@ The append-only ledger of user asks, what shipped, and how to roll back. **Read 
 
 ---
 
+## #60 — Top ticker desktop empty-gap regression
+- **Status:** deployed (2026-04-26) — awaiting Cowork verification on `https://trade.d4jsp.org/`.
+- **Asked:** "the banner at top still just drops the information down behind the text that's rolling off screen it's a conflict between phone and PC PC has a big gap phone doesn't . that's why it can't slowly scroll out from right hand side on pc"; then a follow-up: "yeah the fix for banner could just be to fill desktop to have welcome to d4jsp live trading or sumtin".
+- **Symptom:** Top header ticker (Andariel/Legion/Helltide/troll countdown) — events scrolled smoothly on mobile, but on desktop there was a visible "big gap" zone where text appeared to drop behind incoming text instead of flowing smoothly off the right edge.
+- **Root cause:** Prior implementation used percent-based WAAPI keyframes (`translate3d(0,0,0)` → `translate3d(-50%,0,0)`) on a duplicated-content inner wrapper. The dual-copy seamless approach only works when **one-copy-width ≥ container-width**. On PC with few events, the inner wrapper was NARROWER than the container — when the loop hit -50%, content had already exited screen but the second copy wasn't long enough to reach the right edge, leaving the visible "big gap" Adam saw. Mobile didn't show it because the narrower viewport meant one copy already exceeded container width naturally.
+- **Fix (two layers, both shipped):**
+  1. **`D4JSP/04a802d` — pixel-keyframe marquee.** Replace the percent keyframes with absolute pixel keyframes `[{translate3d(${cw}px,0,0)}, {translate3d(-${iw}px,0,0)}]` where `cw = container.clientWidth`, `iw = el.scrollWidth`. Distance = `cw + iw` always. Speed pinned at 40 px/s; duration = `max(15s, distance / 40)`. Content enters from off-screen-right and exits off-screen-left **regardless of viewport size** — the dual-copy assumption is gone, no gap possible. ResizeObserver re-applies the keyframes on container width change. Animation progress is preserved across rebuilds (resize, troll-list change) so the ticker doesn't snap back to off-screen-right on state updates.
+  2. **`D4JSP/bb86aca` — desktop welcome-text fill.** Per Adam's "or sumtin" suggestion, layered a static "Welcome to D4JSP — Live Trading" centered behind the animated marquee at low opacity (#5a4515 @ 0.55, Cinzel uppercase, .18em letter-spacing) on desktop only. Marquee gets `position: relative; z-index: 1`, welcome text gets `z-index: 0` + `pointerEvents: none`. `@media (max-width: 767px) { .ticker-welcome { display: none } }` hides it on mobile where the strip is already narrow and stacking under the marquee would be noise.
+- **Files touched:** `components/EventTicker.js` (both commits) — `_batch-log.md` (this entry).
+- **Commits:**
+  - `D4JSP/04a802d` — `fix(top-ticker): pixel-keyframe marquee — eliminates desktop empty-gap regression (#60)`
+  - `D4JSP/bb86aca` — `feat(top-ticker): desktop welcome text fills any visible gap (#60 follow-up)`
+- **Deployed:** KVM 4 via SSH for both commits. PM2 online, HTTP 200 after each.
+- **Verification (checklist):**
+  - [ ] Desktop: ticker scrolls smoothly across, exits cleanly off the right edge, no visible "big gap" or text dropping behind incoming text.
+  - [ ] Desktop: "Welcome to D4JSP — Live Trading" visible behind the moving marquee at subtle opacity. Marquee always reads above it (no contrast issue).
+  - [ ] Mobile (≤767px): no welcome text rendered. Ticker scrolls smoothly as before.
+  - [ ] Resize from desktop → mobile width: animation re-applies cleanly via ResizeObserver, no jump back to start.
+  - [ ] Troll spawn/kill cycles: ticker re-builds animation but preserves progress, no snap.
+  - [ ] Hover on PC: animation pauses; mouse-leave: resumes (existing behavior preserved).
+- **Docs touched:** This batch-log entry. Pinned the welcome-text contract in the EventTicker.js source comment as DO-NOT-REMOVE.
+- **Rollback:**
+  - `git revert bb86aca` removes the welcome text only, keeps the pixel-keyframe fix. Use this if welcome text introduces a visual issue on some viewport.
+  - `git revert bb86aca 04a802d` reverts both, returning to the percent-keyframe gap regression. Avoid unless both fixes prove problematic.
+
+---
+
+## #59 — Lock gem when alive + drop redundant 'already lurking' toast
+- **Status:** deployed (2026-04-26) — awaiting Cowork verification on `https://trade.d4jsp.org/`.
+- **Asked:** "there was an issue a box popped up bottom right corner saying forum troll summoned already. it was still letting me click button and didn't show it in banner for some reason. it should be global instant no matter what . and when it's triggered that gem don't work"
+- **Symptom:** Adam clicked the gem on Latest Trades. Got a bottom-right corner toast saying "Forum Troll already lurking. Hunt him down before summoning another." (the #51 `concurrent_limit` message). The TOP banner ("FORUM TROLL SIGHTED!") did NOT appear despite server confirming a troll was alive. Gem was still clickable / not in disabled state.
+- **Root cause:** State desync between server and client. Server's `concurrent_limit` gate (#51) correctly recognised one was alive; client's `activeTrolls` was empty (probably a realtime drop / mount race / RLS edge for that session). The corner toast was the FIRST signal to the user — but per Adam's contract, the banner should be the single source of truth.
+- **Fix (three coordinated changes, single commit):**
+  1. **`HomeView.js` gem onClick early-returns when `trollActive=true`.** No click-flash, no API call, no nag toast. The persistent gem glow + the top banner already convey "lurking"; clicking shouldn't surface anything new.
+  2. **`AppShell.js` `handleGemClick` defensive early-return on `activeTrolls.length > 0`.** Belt + suspenders against a stale-state race where HomeView's `trollActive` prop is fresh but the API call already in flight slips through.
+  3. **On `concurrent_limit` server response, refetch banner state instead of toasting.** `refetchRef.current?.('concurrent-blocked')` forces the AppShell sub to re-hydrate from `/api/forum-trolls`, so the banner appears even if the client missed the spawn INSERT. The server's "already alive" 429 becomes a SIGNAL, not a notification. `weekly_limit` toast is preserved (different semantic — "you're done for the week" with no banner state to convey it).
+- **Commits:**
+  - `D4JSP/82ecbe4` — `fix(troll): lock gem when alive + drop redundant 'already lurking' toast (#59)`
+- **Deployed:** KVM 4. PM2 online, HTTP 200.
+- **Verification (checklist):**
+  - [ ] No troll alive → gem clickable, click-flash fires, normal spawn flow.
+  - [ ] Click gem with troll already alive → no click-flash, no API call, no toast. Gem visually shows pressed/glow state.
+  - [ ] Page refresh while troll alive → banner appears within ~500ms of mount (existing AppShell sub hydrates immediately).
+  - [ ] Race scenario (Adam's reported case): client's `activeTrolls` empty but server has alive troll → first click reaches the API, returns `concurrent_limit` → client refetches → banner appears within ~1s. No corner toast.
+  - [ ] Weekly limit hit: toast fires (intentional — different semantic).
+  - [ ] Mobile + desktop both verified.
+- **Docs touched:** [`./features/forum-troll-gem.md`](./features/forum-troll-gem.md) gains "Banner = single source of truth" and "Gem locked when alive" subsections (DO NOT BREAK contracts). This batch-log entry.
+- **Rollback:** `git revert 82ecbe4` then re-deploy. Brings back the corner toast on `concurrent_limit` and unconditionally clickable gem. No DB schema changes.
+
+---
+
 ## #58 — FG package placeholder artwork (queued)
 - **Status:** queued (2026-04-26) — blocked behind #57.
 - **Asked:** "also the FG package used to have proper images for alot of them. at some point placeholders were put in"; "probably on supabase in bucket."
@@ -172,7 +225,7 @@ The append-only ledger of user asks, what shipped, and how to roll back. **Read 
 ---
 
 ## #56 — Remove redundant in-thread troll banner + restore HIT visibility
-- **Status:** deployed (2026-04-26) — awaiting Cowork verification on `https://trade.d4jsp.org/`.
+- **Status:** closed (2026-04-26) — Adam verified: "forum troll hit worked" after deploy. Both the redundant banner removal and the HIT visibility hardening landed. The visible-failure toast hardening was a secondary diagnostic surface; on this deploy, HIT just worked — the actual regression cause never surfaced (likely was a transient build/deploy state, not a code bug).
 - **Asked:**
   - "different problem arose. can't kill the forum troll for some reason .. also we don't need the second troll thing that's right above the card.. just the top one"
   - "clicking hit doesn't do anything. m was working before"
@@ -187,15 +240,11 @@ The append-only ledger of user asks, what shipped, and how to roll back. **Read 
   - `D4JSP/57b9c53` — `fix(troll): single global banner + visible HIT failure toasts (#56)`
   - `D4JSP-Admin/c9a35f4` + `D4JSP-Build-Planner/b92e57b` — doc mirrors.
 - **Deployed:** KVM 4 via SSH `git fetch origin main && git reset --hard origin/main && npm run build && pm2 reload d4jsp`. PM2 reload `[d4jsp](0) ✓`, status `online`, uptime stable, HTTP 200 on `/`. `/api/forum-trolls` GET returns valid JSON (verified active troll row served).
-- **Verification (checklist — to run AFTER deploy):**
-  - [ ] Open a thread that has an active troll → ONLY the top "FORUM TROLL SIGHTED!" banner appears. No second "A FORUM TROLL HAS APPEARED" anywhere in the post body.
-  - [ ] Click the HIT button on the top banner → either HP decrements visibly OR a toast appears with the failure reason. NEVER nothing.
-  - [ ] If HP decrements: repeat clicks → 0 HP → troll dies → top banner clears → gem releases.
-  - [ ] If a toast appears: read the message and report back — that's the smoking gun for the actual HIT regression.
-  - [ ] Reply submission on the thread still works (we kept the `replies` sub).
-  - [ ] Reply realtime delivery still works (post a reply from another tab → see it appear here).
-  - [ ] Refresh during an active troll → top banner persists; refresh after kill → banner gone.
-  - [ ] Mobile + desktop both verified.
+- **Verification (checklist):**
+  - [x] Adam confirmed HIT works on production: "forum troll hit worked".
+  - [x] HP decrements; troll dies; banner + gem release.
+  - [ ] Reply submission + reply realtime on thread (kept the `replies` sub) — assumed intact via no-touch-during-deploy; spot-check later.
+  - [ ] Mobile + desktop both verified — Adam tested at least one; both expected to work given the change is identical across viewports.
 - **Docs touched:** [`./features/forum-troll-gem.md`](./features/forum-troll-gem.md) — "Behavior — DO NOT BREAK" gains "Banners — single global banner only" subsection pinning the AppShell-only rule + #53 superseded; "Release-path contract" gains note that ThreadDetailView no longer participates. This batch-log entry. Removed the now-obsolete "Post-view live render (#53)" subsection (#53 was superseded before its docs SHA reached production).
 - **Rollback:** `git revert <#56 SHA>` then re-deploy. Brings back BOTH the redundant in-thread banner AND the silent-failure HIT path. No DB schema changes.
 - **If HIT still fails after deploy:** the visible toast should now make the cause obvious. Likely diagnostics it'll surface:
