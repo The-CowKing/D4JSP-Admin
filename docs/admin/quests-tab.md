@@ -2,6 +2,10 @@
 
 CRUD on `quests` catalog and `triggers.config`. Drives every quest in the system.
 
+## ⚠ HARD RULE — never flip the verified switch without Adam's confirmation
+
+The wire-dot / "NOT WIRED" / connected badges on quest rows are the SAME flag everywhere. Bots ship fixes; Adam tests in prod; Adam confirms; THEN the bot flips the switch in a separate commit. Never auto-flip on internal verification alone. See [`../conventions.md`](../conventions.md) "Verified-working flip workflow" for the full protocol. Adam: *"basically u just flip the switch once u know that quest is confirmed need to end working"* — and confirmation = Adam's word, not the bot's diagnostic output.
+
 ## Endpoints
 - `POST /api/admin/quests` — `quests` CRUD
 - `POST /api/admin/trigger-config` — `triggers.config` jsonb edit

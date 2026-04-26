@@ -2,6 +2,38 @@
 
 Long-form version of the protocols section in [`../start.md`](../start.md). Both stay in sync; if they drift, start.md wins for the rules and this doc gets the rationale.
 
+## ⚠ HARD RULE: Verified-working flip workflow — NEVER auto-flip
+
+The "verified working" / "wired" / "green-lit" / "confirmed" switch on any catalog row (quests, triggers, specials, skills, badges, subscription tiers, fg_packages, ranks, etc.) is **flipped ONLY AFTER Adam confirms the feature works in production**.
+
+Adam (verbatim): *"basically u just flip the switch once u know that quest is confirmed need to end working"*, *"I'll confirm it u flip em once we get to testing"*, *"this should all be noted in docs too . I've explained this so many times.."*. Pin in three places: this doc, [`../start.md`](../start.md), and the per-tab admin docs.
+
+### What counts as a "verified" switch
+- The wire-dot status (red/yellow/green) shown next to quest/requirement/reward rows in the admin Quests tab.
+- The "NOT WIRED" / "WIRED" / connected badge on catalog rows.
+- Any boolean column that conveys "this works in prod" — `verified_working`, `confirmed`, `is_wired`, `verified`, etc.
+- Static `wired: 'red'/'green'` constants in `components/AdminView.js` (`QUEST_WIRED`, `REQUIREMENT_TYPES`, `REWARD_TYPES`).
+
+### Why the rule exists
+- FG is real money. A green light on the admin panel signals "this is paying out for real users." Auto-flipping based on bot internal verification (DB looks right, RPC fires) creates a false positive that hides actual prod regressions. Adam needs to TEST in prod and CONFIRM before the catalog reflects "verified."
+- Adam has been burned by previous bots silently flipping these flags after their own internal "checks." This rule blocks the recurrence.
+
+### Workflow
+1. Bot diagnoses + ships fix + deploys to KVM 4.
+2. Bot reports: "wired correctly per DB inspection; awaiting Adam's prod confirmation."
+3. Adam tests in prod.
+4. Adam confirms ("the spawn quest pays out FG now" / "kill quest works" / "reward landed in my balance").
+5. **THEN** bot flips the switch — separate commit titled `verify(<scope>): flip switch on <id> after Adam's prod confirmation`.
+
+### Hard prohibitions
+- **Never bundle the flip with the fix.** Two commits — fix first, flip after confirmation.
+- **Never flip on programmatic verification alone.** "DB rows look right" / "RPC fires without error" / "logs are clean" are NECESSARY but NOT SUFFICIENT.
+- **Never change a static `wired` constant from red → green** without Adam's explicit confirmation that the feature works in prod.
+- **Don't build new verified-working schema or admin UI.** The existing badges/columns are it. Adam: *"don't build new shit either the green lights and stuff are already there just needs to work correctly"*.
+
+### When you're tempted to flip
+Stop. Report status. Ask. Adam will tell you when to flip.
+
 ## Style
 
 - **Concise.** Prefer "X is Y" to "X is generally Y in most cases."

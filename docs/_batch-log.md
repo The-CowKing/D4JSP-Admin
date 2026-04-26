@@ -9,6 +9,11 @@ The append-only ledger of user asks, what shipped, and how to roll back. **Read 
 - Roll back something → execute the rollback, mark status `reverted`, append the revert SHA(s).
 - Update the **Live now** block at the top whenever you open, close, or revert an entry.
 
+## ⚠ Verified-working flip — NEVER auto-flip
+Any catalog row's "verified working" / wired / connected / green-light flag (admin Quests tab dots, `quests.verified*` columns, static `wired: 'red'/'green'` constants in admin code, etc.) is **flipped ONLY AFTER Adam confirms the feature works in production**. Bots ship the fix → deploy → report "awaiting prod confirmation" → Adam tests → Adam confirms → bot flips in a separate commit. NEVER bundle. See [`../start.md`](../start.md) and [`./conventions.md`](./conventions.md). Adam: *"I'll confirm it u flip em once we get to testing"*.
+
+Each entry below requires an `Adam-confirmed in prod: [ ]` checkbox before any verified-flip commit can be written for the same scope.
+
 ## Live now
 
 - **#61 — Reward grants broken end-to-end for spawn + kill quests (deployed, awaiting verify)** — `D4JSP/ac958e1` deploying to KVM 4. Adam: "the rewards aren't deploying I have 0 forum gold the quest for spawning and killing both award gold"; "yah it's also real gold not fake gold"; "vault". Diagnosis: live quest rows (Summon forum troll, First Blood) have `xp_reward=0 + fg_reward=0` scalar columns but populated `rewards` jsonb arrays — the grant code read only the legacy scalars, so neither spawn nor kill granted anything. `quest_progress` was empty system-wide; `fg_ledger` had only the genesis row; Adam's `fg_balance=0` despite multiple kills today. Fix: new `_parseQuestRewards` helper reads modern array first with legacy fallback. New `_grantQuestRewards` (quest-trigger.js) and `_grantKillQuestRewards` (forum-trolls.js) write fg_ledger row first (vault → user, immutable audit) then call `increment_user_fg` RPC (SECURITY DEFINER, atomic balance + vault accounting), then XP. Reordered grant-before-progress-upsert so grant failures don't lock out retry. Idempotency via existing.completed gate.

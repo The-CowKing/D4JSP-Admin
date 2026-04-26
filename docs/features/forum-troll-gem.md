@@ -93,6 +93,10 @@ Visual feedback that the gem is locked is provided by the persistent `.gem-press
 
 **DO NOT** remove either early-return. Without them, a stale-state race produces the corner-toast nag (Adam's #59 root complaint) AND wastes API calls + click-flash on no-op clicks.
 
+## ⚠ Verified-working flip — NEVER auto-flip the wire-dot
+
+The wire-dot / "NOT WIRED" / connected badge in admin's Quests tab on the troll quests is FLIPPED ONLY AFTER Adam confirms the chain pays out in prod. Even after a fix to the troll quest chain ships and DB inspection shows the chain is wired correctly, the verified flag stays at its current state until Adam tests and confirms. See [`../conventions.md`](../conventions.md) "Verified-working flip workflow" for the full protocol. This applies to the spawn quest, the kill quest, and any future troll-related catalog rows.
+
 ## Reward grant chain (#61 contract — DO NOT BREAK)
 
 Both `Summon forum troll` (daily, trigger `forum_troll_spawned`) and `First Blood` (one_time, trigger `forum_troll_slain`) award FG + XP. The grant chain MUST follow the ledger-first contract from [`../data-model/fg-ledger.md`](../data-model/fg-ledger.md):
