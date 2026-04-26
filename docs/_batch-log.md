@@ -13,7 +13,7 @@ The append-only ledger of user asks, what shipped, and how to roll back. **Read 
 
 - **#58 — FG package placeholder artwork (queued)** — Adam: "the FG package used to have proper images for alot of them. at some point placeholders were put in." Hint: "probably on supabase in bucket." Blocked behind #57. Restore proper per-package artwork — likely the Supabase Storage URLs in `fg_packages.image_url` were overwritten with placeholder paths; real images still in the bucket.
 - **#57 — Stripe payment flow broken since KVM 4 migration (queued)** — Adam: subscribe button shows in-page modal that doesn't redirect to Stripe Checkout; Buy FG returns "Invalid package". Likely root causes: webhook URL still points at old cloud host, env vars missing on KVM 4, or stale `stripe_price_id` values. Blocked: blocks revenue flow, top priority after #56 ships and verifies.
-- **#56 — Remove redundant in-thread troll banner + restore HIT visibility (pushed, awaiting deploy)** — Adam: "different problem arose. can't kill the forum troll for some reason .. also we don't need the second troll thing that's right above the card.. just the top one." Both fixes in one pass. ThreadDetailView's "A Forum Troll has appeared" body banner + its #53 thread-scoped sub + state are removed entirely — the AppShell global banner (filtered by `selectedThreadId`) is now the single source of UI for troll state in any view. AppShell `handleTrollHit` now surfaces a visible toast on every failure path (auth/4xx/5xx/network) instead of failing silently — this both restores immediate user feedback and gives us a diagnostic surface to identify the actual HIT regression Adam saw.
+- **#56 — Remove redundant in-thread troll banner + restore HIT visibility (deployed, awaiting verify)** — `D4JSP/57b9c53` deployed to KVM 4 (PM2 reload `[d4jsp](0) ✓`, status `online`, HTTP 200 on `/`, `/api/forum-trolls` returns valid JSON). ThreadDetailView's "A Forum Troll has appeared" body banner + its #53 thread-scoped sub + state removed entirely — the AppShell global banner (filtered by `selectedThreadId`) is now the single source of UI for troll state in any view. AppShell `handleTrollHit` surfaces a visible toast on every failure path (auth/4xx/5xx/network) instead of failing silently. Cowork to run the spot-check checklist below — Adam should now see either HP decrement OR a diagnostic toast on every HIT click.
 - **#55 — Tooltip + user-info clipping on desktop only (deployed, awaiting verify)** — `D4JSP/bd66237` deployed to KVM 4 (PM2 online, HTTP 200, JS bundle confirmed contains the new `white-space:normal!important;overflow-wrap:anywhere!important;max-width:300px!important` rules on tooltip tables/cells + `overflow-wrap:anywhere!important;word-break:break-word!important` on `.whtt-scroll` descendants). Mirrored to `D4JSP-Admin/1534a7f`, `D4JSP-Build-Planner/96e5685`, `D4JSP-Map/d8f49b7`. Mirrors the mobile-only wrap-override globally so desktop also wraps tooltip tables/cells/text within the locked 300px width. Username `wordBreak:'break-word'` → `overflowWrap:'anywhere'; hyphens:'auto'` for hard-break fallback. Cowork to run the 9-item verification checklist.
 - **#53 — Live troll render in post view (superseded by #56)** — `D4JSP/536c6a7` pushed but never deployed. The in-thread banner that #53 hardened was removed in #56 because Adam decided he wants only one banner globally. The thread-scoped sub is gone; the AppShell global sub already drives the (single, top-of-screen) banner including for users on the affected thread.
 - **#54 — Tooltip bottom-fixed pushed below frame on long-content preview (deployed, awaiting verify)** — `D4JSP/2c72c98` deployed to KVM 4 (PM2 online, HTTP 200, JS bundle confirmed contains `.whtt-container{...height:520px!important}` + `.whtt-scroll{flex:1 1 0!important;min-height:0!important;max-height:420px!important...}`). Mirrored to `D4JSP-Admin/111e402`, `D4JSP-Build-Planner/84c1334`, `D4JSP-Map/93a27e9`. Container locked at 520px; scroll-area uses `flex:1 1 0` to deterministically fill 420 within it; bottom-fixed structurally anchored at bottom 100. Cowork to run the 8-item verification checklist below.
@@ -172,7 +172,7 @@ The append-only ledger of user asks, what shipped, and how to roll back. **Read 
 ---
 
 ## #56 — Remove redundant in-thread troll banner + restore HIT visibility
-- **Status:** pushed (2026-04-26) — awaiting Cowork SSH deploy (sandbox blocked direct deploy).
+- **Status:** deployed (2026-04-26) — awaiting Cowork verification on `https://trade.d4jsp.org/`.
 - **Asked:**
   - "different problem arose. can't kill the forum troll for some reason .. also we don't need the second troll thing that's right above the card.. just the top one"
   - "clicking hit doesn't do anything. m was working before"
@@ -184,13 +184,9 @@ The append-only ledger of user asks, what shipped, and how to roll back. **Read 
   2. [`../../components/AppShell.js`](../../components/AppShell.js) — `handleTrollHit` now early-exits with a toast if `getToken()` returns falsy; reads the response with `.json().catch(() => ({}))` so a non-JSON 4xx/5xx body doesn't blow up; checks `r.ok && data?.ok` before optimistic updates; surfaces server `data.error` (or `Hit failed (HTTP <status>)` fallback) on any non-ok path; surfaces `err.message` on network error. Net: +14 lines, behavior-preserving on success path.
 - **Why supersedes #53:** #53 hardened the in-thread banner's release path. #56 deletes the in-thread banner entirely. #53's value is preserved through the AppShell global sub (which already had its own #47 release-path contract; the global banner filtered by `selectedThreadId` updates live in this view from that sub).
 - **Commits:**
-  - `D4JSP/<#56 SHA>` — `fix(troll): remove redundant in-thread banner + visible HIT failure toasts (#56)`
-- **Deployed:** **NOT YET.** Cowork to run:
-  ```bash
-  ssh -i C:/Users/Owner/Desktop/keyz/d4jsp_kvm4_claude root@177.7.32.128 \
-    "cd /opt/d4jsp && git fetch origin main && git reset --hard origin/main && \
-     npm run build && pm2 reload d4jsp"
-  ```
+  - `D4JSP/57b9c53` — `fix(troll): single global banner + visible HIT failure toasts (#56)`
+  - `D4JSP-Admin/c9a35f4` + `D4JSP-Build-Planner/b92e57b` — doc mirrors.
+- **Deployed:** KVM 4 via SSH `git fetch origin main && git reset --hard origin/main && npm run build && pm2 reload d4jsp`. PM2 reload `[d4jsp](0) ✓`, status `online`, uptime stable, HTTP 200 on `/`. `/api/forum-trolls` GET returns valid JSON (verified active troll row served).
 - **Verification (checklist — to run AFTER deploy):**
   - [ ] Open a thread that has an active troll → ONLY the top "FORUM TROLL SIGHTED!" banner appears. No second "A FORUM TROLL HAS APPEARED" anywhere in the post body.
   - [ ] Click the HIT button on the top banner → either HP decrements visibly OR a toast appears with the failure reason. NEVER nothing.
