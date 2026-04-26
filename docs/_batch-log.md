@@ -11,6 +11,11 @@ The append-only ledger of user asks, what shipped, and how to roll back. **Read 
 
 ## Live now
 
+- **#58 — FG package placeholder artwork (queued)** — Adam: "the FG package used to have proper images for alot of them. at some point placeholders were put in." Hint: "probably on supabase in bucket." Blocked behind #57. Restore proper per-package artwork — likely the Supabase Storage URLs in `fg_packages.image_url` were overwritten with placeholder paths; real images still in the bucket.
+- **#57 — Stripe payment flow broken since KVM 4 migration (queued)** — Adam: subscribe button shows in-page modal that doesn't redirect to Stripe Checkout; Buy FG returns "Invalid package". Likely root causes: webhook URL still points at old cloud host, env vars missing on KVM 4, or stale `stripe_price_id` values. Blocked: blocks revenue flow, top priority after #56 ships and verifies.
+- **#56 — Remove redundant in-thread troll banner + restore HIT visibility (pushed, awaiting deploy)** — Adam: "different problem arose. can't kill the forum troll for some reason .. also we don't need the second troll thing that's right above the card.. just the top one." Both fixes in one pass. ThreadDetailView's "A Forum Troll has appeared" body banner + its #53 thread-scoped sub + state are removed entirely — the AppShell global banner (filtered by `selectedThreadId`) is now the single source of UI for troll state in any view. AppShell `handleTrollHit` now surfaces a visible toast on every failure path (auth/4xx/5xx/network) instead of failing silently — this both restores immediate user feedback and gives us a diagnostic surface to identify the actual HIT regression Adam saw.
+- **#55 — Tooltip + user-info clipping on desktop only (deployed, awaiting verify)** — `D4JSP/bd66237` deployed to KVM 4 (PM2 online, HTTP 200, JS bundle confirmed contains the new `white-space:normal!important;overflow-wrap:anywhere!important;max-width:300px!important` rules on tooltip tables/cells + `overflow-wrap:anywhere!important;word-break:break-word!important` on `.whtt-scroll` descendants). Mirrored to `D4JSP-Admin/1534a7f`, `D4JSP-Build-Planner/96e5685`, `D4JSP-Map/d8f49b7`. Mirrors the mobile-only wrap-override globally so desktop also wraps tooltip tables/cells/text within the locked 300px width. Username `wordBreak:'break-word'` → `overflowWrap:'anywhere'; hyphens:'auto'` for hard-break fallback. Cowork to run the 9-item verification checklist.
+- **#53 — Live troll render in post view (superseded by #56)** — `D4JSP/536c6a7` pushed but never deployed. The in-thread banner that #53 hardened was removed in #56 because Adam decided he wants only one banner globally. The thread-scoped sub is gone; the AppShell global sub already drives the (single, top-of-screen) banner including for users on the affected thread.
 - **#54 — Tooltip bottom-fixed pushed below frame on long-content preview (deployed, awaiting verify)** — `D4JSP/2c72c98` deployed to KVM 4 (PM2 online, HTTP 200, JS bundle confirmed contains `.whtt-container{...height:520px!important}` + `.whtt-scroll{flex:1 1 0!important;min-height:0!important;max-height:420px!important...}`). Mirrored to `D4JSP-Admin/111e402`, `D4JSP-Build-Planner/84c1334`, `D4JSP-Map/93a27e9`. Container locked at 520px; scroll-area uses `flex:1 1 0` to deterministically fill 420 within it; bottom-fixed structurally anchored at bottom 100. Cowork to run the 8-item verification checklist below.
 - **#52 — Troll spawn pool capped to top-page (closed)** — Config-only, no code change, no deploy. Set `quests.config.spawn_limit = 10` on the `Summon forum troll` quest (was unset → fell back to default 20). Matches `HomeView.js:402 PAGE_SIZE = 10` so trolls can only land on threads a hunter sees on page 1 of Latest Trades. Verified via service-role REST PATCH; quest row `8e715845-1caf-4cc3-bc7b-a11f8029d90d` now has `config: {"spawn_limit": 10}`.
 - **#51 — Banner + gem stuck on after killing one troll while others still alive (closed)** — `D4JSP/0204f6e` deployed to KVM 4. Root cause: rapid gem-clicks had spawned 4 alive trolls in `forum_trolls`; killing ONE left 3 alive, so banner + gem state (driven by global `activeTrolls.length > 0`) stayed on. Fix: server-side concurrent-alive cap on spawn via new `triggers.config.max_alive_concurrent` (default 1), 429 with `blocked: 'concurrent_limit'`. DB cleanup: 4 stuck rows (`24f5a5cd`, `b05033f1`, `e9fe34b1`, `ce5fb43f`) set `killed_at=NOW(), hp=0` via service-role REST. `/api/forum-trolls` now returns `{"trolls":[]}`.
@@ -23,6 +28,186 @@ The append-only ledger of user asks, what shipped, and how to roll back. **Read 
 - **#44 — Gem moved off hero illustration (closed)** — `D4JSP/7e1febf` deployed. Reverts zIndex 9999→107 from #42; gem returns to anchor on goblin's gem in Latest Trades banner.
 - **#43 — Wiki + memory architecture build (closed)** — `D4JSP/8767582` + `D4JSP-Admin/c43ac83` + `D4JSP-Build-Planner/4c0e85b` + `D4JSP-Map/976c0c9`. All 4 repos verified clean.
 - **#42 — Gem button regression fix (closed)** — `D4JSP/00ec198`. Click-flash restored after `c5d83c8` regression.
+
+---
+
+## #53 — Live troll render in post view (thread-scoped realtime hardening)
+- **Status:** pushed (2026-04-26) — deploy step blocked by sandbox; awaiting Cowork SSH deploy.
+- **Asked:** "make sure users can see the forum troll popup live if they are in the post when it spawns too so they don't get fucked over and would have to back out and in again"
+- **Scope:** A user already viewing a thread when a troll spawns ON that thread must see the in-thread "A Forum Troll has appeared" banner appear LIVE — no reload, no navigate-away-and-back. Same release path on kill/despawn.
+- **Diagnosis:** [`../../components/ThreadDetailView.js`](../../components/ThreadDetailView.js) already had a thread-scoped `forum_trolls` realtime sub filtered on `thread_id=eq.${threadId}` for INSERT/UPDATE/DELETE. Spawn-render path was *technically* working but had two release-path bugs identical to the AppShell #47 pattern that, combined with the `forum_trolls` server-UPDATE-only-on-kill (no DELETE), would leave the in-thread banner stuck on:
+  1. **UPDATE handler didn't release on kill.** It merged the new row into `prev` but never re-checked aliveness — so `killed_at` getting set via UPDATE just updated `activeTroll` instead of clearing it.
+  2. **No passive despawn handling.** TTL expiry (`despawn_at`) produces no DB row change → no realtime event → banner stuck until next page load.
+  3. **`huntTroll` only optimistically released on `data.killed === true`.** A 400 "already slain" response never cleared local state.
+- **Fix:** Mirror AppShell's #47 contract in ThreadDetailView:
+  1. New `_isTrollAlive(t) = !t.killed_at && (!t.despawn_at || new Date(t.despawn_at) > now())` defensive helper.
+  2. `loadActiveTroll` filters through `_isTrollAlive` before `setActiveTroll`.
+  3. INSERT handler only sets state if the new row is alive.
+  4. UPDATE handler merges, then re-runs `_isTrollAlive(merged)` — if no-longer-alive, sets to `null`. This is the kill release path (server kills via UPDATE, never DELETE).
+  5. New passive despawn `setTimeout` at `despawn_at + 250ms` clears the local state and calls `refetchTrollRef.current?.()` as a safety net.
+  6. `huntTroll` always calls `refetchTrollRef.current?.()` after the server response regardless of `data.killed`/`data.ok` shape.
+  7. Channel cleanup nulls `refetchTrollRef.current` to avoid post-unmount fires.
+- **Commits:**
+  - `D4JSP/536c6a7` — `feat(troll): live-render troll spawn in post view via thread-scoped realtime sub (#53)`
+- **Deployed:** **NOT YET.** SSH write to KVM 4 blocked by sandbox. Cowork to run:
+  ```bash
+  ssh -i C:/Users/Owner/Desktop/keyz/d4jsp_kvm4_claude root@177.7.32.128 \
+    "cd /opt/d4jsp && git fetch origin main && git reset --hard origin/main && \
+     npm run build && pm2 reload d4jsp"
+  ```
+- **Verification (checklist — to run AFTER deploy):**
+  - [ ] Open a thread that's in the top-10 spawn pool. Stay on it.
+  - [ ] In a separate tab/device, click the gem until a troll spawns. Confirm the spawn lands on this thread (or repeat until it does — top-10 makes it ~10% per spawn).
+  - [ ] Original tab: "A Forum Troll has appeared" banner appears WITHOUT refresh / navigate-away.
+  - [ ] HP percentage updates live as the troll is hit (from this tab or any other).
+  - [ ] Kill the troll → banner disappears within ~1s without refresh.
+  - [ ] Refresh the same thread post-kill → banner stays gone.
+  - [ ] Spawn a troll, set a short `despawn_minutes`, wait for despawn → banner clears at TTL (within 250ms grace).
+  - [ ] Replies still render live (the existing `replies` channel handler must not be regressed).
+  - [ ] Tooltip rendering and reply submission unaffected (#50 / #54 contracts intact).
+  - [ ] Mobile + desktop both verified.
+- **Docs touched:** [`./features/forum-troll-gem.md`](./features/forum-troll-gem.md) — new "Post-view live render (#53)" section pinning the dual-sub architecture (global + thread-scoped) and the AppShell-mirroring contract as DO-NOT-BREAK invariants. This batch-log entry.
+- **Rollback:** `git revert 536c6a7` then re-deploy KVM 4. Reverts to the pre-#53 ThreadDetailView with the latent UPDATE-to-killed and passive-despawn release bugs (the in-thread banner can stick on until next page load — same class of bug as the AppShell #47 issue but scoped to the thread view).
+- **Why two subs (one global, one thread-scoped):** the global sub in AppShell drives `trollActive` for the gem-on glow + EventTicker banner across the whole app. The thread-scoped sub is filtered server-side on the realtime publication so a post-viewer doesn't pay for receiving every spawn event globally — only events for the thread they're on. They serve different UI elements; they're not redundant.
+
+---
+
+## #55 — Tooltip right-edge + user-info clipping on desktop
+- **Status:** deployed (2026-04-26) — awaiting Cowork verification on `https://trade.d4jsp.org/`
+- **Asked:** "this is the closest it's ever been but the right hand side of the tool tip is clipping only on pc phone is absolutely perfect" + "the user Info is clipping too now on computer"
+- **Symptom (desktop only, mobile perfect):**
+  - Tooltip flavor text and other text inside the tooltip clipping mid-word at the right edge ("Treat carefully on the plains of Hell, for each step sunders the soul and shatters the m...").
+  - Seller-column username "THE COW KING" → "THE COW..." truncated instead of wrapping to 2 lines.
+- **Root cause (#1 — tooltip text clip):** Wowhead's base CSS at [`../../public/css/wowhead-tooltip.css`](../../public/css/wowhead-tooltip.css) forces `white-space: normal !important` on tooltip tables/cells via a `@media (max-width: 599px)` rule. Mobile gets the override; desktop inherits default white-space behavior. Combined with `.wowhead-tooltip td { max-width: 500px }` from the same base CSS, table cells on desktop can render up to 500px wide — exceeding the locked 300px tooltip width — when content has long unbreakable runs. With our `feed-thumb { overflow: hidden }` (#50), the overflowing right edge gets visually clipped on preview cards. The same clip happens in post view but is less obvious because the post is a single tooltip, not a card grid.
+- **Root cause (#2 — username clip):** Seller column is `width: 68px; padding-left: 8px` → 60px content area. Username at `fontSize: 9; font-family: Cinzel; text-transform: uppercase` with `wordBreak: 'break-word'`. `break-word` only kicks in for unbreakable single tokens; for "THE COW KING" it tries to break at spaces first. At desktop's font-rendering precision, "THE COW " can render ~62-65px (over the 60px), forcing wrap point earlier than expected — but the WebkitLineClamp:2 + overflow:hidden combo can show the truncated single line with ellipsis instead of a clean 2-line wrap. The `wordBreak: 'break-word'` doesn't help because the issue isn't an unbreakable word, it's a precision-of-fit issue.
+- **Fix (#1):** Mirror the mobile wrap rule globally in `_injectBgOverride()`. New rules added:
+  ```css
+  .wowhead-tooltip[data-game="d4"] table,
+  .wowhead-tooltip[data-game="d4"] th,
+  .wowhead-tooltip[data-game="d4"] td {
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+    max-width: 300px !important;  /* clamp at tooltip's locked width */
+  }
+  .wowhead-tooltip[data-game="d4"] .whtt-scroll * {
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+  }
+  ```
+- **Fix (#2):** Username `wordBreak: 'break-word'` → adds `overflowWrap: 'anywhere'` and `hyphens: 'auto'`. `overflow-wrap: anywhere` allows breaking at ANY character if no other break point makes content fit — guarantees the username will wrap rather than overflow at desktop precision.
+- **Files touched:**
+  - `components/D4Tooltip.js` — 2 new CSS rules + comment in `_injectBgOverride()`.
+  - `components/HomeView.js` — 1 line update to the username `<span>` style.
+  - `docs/features/tooltip.md` — #55 history entry, new "Desktop layout — DO NOT NARROW" subsection, DO NOT BREAK list bumped to 9 items.
+- **Commits:**
+  - `D4JSP/bd66237` — `fix(tooltip): preview-card right-edge clipping on desktop (#55)`
+  - `D4JSP-Admin/1534a7f` — `docs: sync tooltip wiki #55 (mirrors D4JSP bd66237)`
+  - `D4JSP-Build-Planner/96e5685` — `docs: sync tooltip wiki #55 (mirrors D4JSP bd66237)`
+  - `D4JSP-Map/d8f49b7` — `docs: sync tooltip wiki #55 (mirrors D4JSP bd66237)`
+- **Deployed:** KVM 4 via SSH. PM2 online, HTTP 200. JS bundle (`/.next/static/chunks/pages/index-*.js`) verified contains both new CSS rules.
+- **Verification (checklist — to run via Cowork after deploy):**
+  - [ ] Desktop preview card with long content (Mortacrux): all text visible inside locked frame, NO right-edge clipping. Flavor text wraps at the 300px boundary.
+  - [ ] Desktop preview card with short content (Rakanoth): same, no clipping.
+  - [ ] Desktop preview card right column: username "THE COW KING" visible (or wrapped to 2 lines), avatar + rank + replies + coin all visible.
+  - [ ] Desktop post detail view: tooltip text wraps within 300px, no horizontal overflow.
+  - [ ] Mobile: unchanged (still absolutely perfect).
+  - [ ] All cards uniform height — #50/#54 wins must hold.
+  - [ ] Bottom-fixed Buy Now / price / footer still anchored at bottom — #54 win must hold.
+  - [ ] Card-resize slider behavior unchanged.
+  - [ ] Hover-zoom popup, long-press popup unchanged.
+- **Docs touched:**
+  - updated: [`./features/tooltip.md`](./features/tooltip.md) — #55 history entry, new "Desktop layout — DO NOT NARROW the left panel" subsection, DO NOT BREAK item #9 added (desktop wrap rules).
+  - mirror: tooltip.md to D4JSP-Admin / D4JSP-Build-Planner / D4JSP-Map.
+- **Rollback:** `git revert <SHA>` then re-deploy KVM 4. Reintroduces desktop right-edge clip + username truncation.
+
+---
+
+## #58 — FG package placeholder artwork (queued)
+- **Status:** queued (2026-04-26) — blocked behind #57.
+- **Asked:** "also the FG package used to have proper images for alot of them. at some point placeholders were put in"; "probably on supabase in bucket."
+- **Symptom:** FG package cards (350 / 660 / 1,380 / "NEW PACKAGE") all show generic D4JSP gold-coin placeholder art. Used to differ per-tier (small pouch / sack / treasure chest matching the tier names).
+- **Likely cause:** the proper images live in a Supabase Storage bucket on the same project (`isjkdbmfxpxuuloqosib`) that both old and new hosts use. The `fg_packages.image_url` column rows likely got overwritten with placeholder paths during some admin edit / migration — the bucket files themselves should still exist.
+- **Diagnosis steps (when work begins):**
+  - `SELECT id, name, image_url FROM fg_packages` — current image_url values: are they `https://*.supabase.co/storage/...` URLs (resolution issue) or local paths like `/coins/default.png` (placeholder swap)?
+  - `supabase.storage.listBuckets()` via service-role REST — find the bucket (`fg-packages` / `package-images` / `assets` / `images`).
+  - List bucket contents — identify per-tier files.
+  - For each package, build the public URL pattern: `https://isjkdbmfxpxuuloqosib.supabase.co/storage/v1/object/public/<bucket>/<file>`.
+  - Verify each URL returns 200 + valid image bytes.
+- **Fix path:** PATCH `fg_packages.image_url` per row to point at the real Storage objects. If files are missing entirely, flag for Adam to provide replacements.
+- **Verification (planned):**
+  - [ ] Each FG package card shows its unique artwork (visually different per tier).
+  - [ ] Mobile + desktop both render correctly.
+  - [ ] DB `image_url` values resolve to actual Storage objects (not placeholders, not 404).
+- **Docs to touch:** `docs/admin/fg-packages-tab.md` (or wherever Buy FG admin lives) — clarify image_url field + Storage path. DO-NOT-BREAK: when adding a new FG package, image must be a real artwork file, not a placeholder.
+
+---
+
+## #57 — Stripe payment flow broken since KVM 4 migration (queued)
+- **Status:** queued (2026-04-26) — top priority after #56 ships.
+- **Asked:** "the forum gold payment doesn't do nothin.. and subscribe is now broken too.. it used to take us through our proper payment gate"; "not sure when it broke probably migration"; "maybe need to change stuff at stripe?"
+- **Symptoms:**
+  1. **Subscribe regression.** Click SUBSCRIBE on a tier → an in-page modal appears ("VERIFIED — Secure payment via Stripe", CANCEL / PAY NOW buttons). Clicking PAY NOW does nothing. Used to redirect to `https://checkout.stripe.com/...`.
+  2. **Buy FG broken.** Clicking BUY NOW on the placeholder "NEW PACKAGE / $0" returns "Invalid package" (expected — placeholder). Other valid packages also fail to redirect to Stripe Checkout per Adam ("doesn't do nothin").
+- **Likely root causes (KVM 4 migration suspect list, ranked):**
+  1. **Stripe webhook endpoint URL still pointing at the old cloud host.** Stripe Dashboard → Developers → Webhooks. Endpoint should be `https://trade.d4jsp.org/api/stripe-webhook` (or whatever the current path is). If it's still the cloud-host URL, signature verification fails post-payment, payments don't complete back to our DB.
+  2. **Stripe env vars missing or wrong on KVM 4.** `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY` (`NEXT_PUBLIC_*` if exposed), `STRIPE_WEBHOOK_SECRET`. Hostinger snapshot of `.env.production` may not have included these.
+  3. **`fg_packages.stripe_price_id` and `subscription_tiers.stripe_price_id` reference stale price IDs.** If the Stripe account / mode (test vs live) changed, the old `price_*` ids return 400 from Checkout session creation.
+  4. **`pages/api/create-checkout-session.js` (or equivalent) silently erroring** — client may be falling back to the in-page modal because the Checkout session URL returned empty/error.
+- **Diagnosis steps (when work begins):**
+  - SSH KVM 4 → `cat /opt/d4jsp/.env.production | grep -E '^STRIPE_' | awk -F= '{print $1}'` — list env var NAMES (don't print values).
+  - Stripe Dashboard → Developers → Webhooks → confirm endpoint URL.
+  - Stripe Dashboard → Developers → Logs → check for failed events on Adam's recent test attempts.
+  - `curl -X POST https://trade.d4jsp.org/api/<checkout-endpoint> ...` with valid auth → inspect response.
+  - Pull `fg_packages` and `subscription_tiers`, confirm `stripe_price_id` columns are populated and look like valid `price_*` ids.
+- **Fix path:** likely combination of (a) fix webhook URL in Stripe Dashboard, (b) verify/restore env vars on KVM 4 from 1Password, (c) restore client-side Checkout redirect if the in-page modal is a code regression, (d) sync `stripe_price_id` if stale.
+- **Verification (planned):**
+  - [ ] Click SUBSCRIBE → redirects to `checkout.stripe.com/...` (not in-page modal).
+  - [ ] Test-mode subscription completes → user `subscription_tiers` row updated, webhook delivery succeeds.
+  - [ ] Click BUY NOW on a real package → redirects to Stripe Checkout.
+  - [ ] Test purchase completes → FG balance increments via webhook, ledger row inserted.
+  - [ ] "NEW PACKAGE / $0" still shows "Invalid package" (placeholder, expected).
+  - [ ] Stripe Dashboard webhook log shows successful deliveries.
+- **Docs to touch:** create `docs/integrations/stripe.md` (webhook URL, env var names, price-id sync procedure). Add to `docs/infra/kvm-4.md` an "After-migration checklist" section: Stripe webhook URL, OAuth redirect URIs, env vars — things to verify when moving the app between hosts.
+
+---
+
+## #56 — Remove redundant in-thread troll banner + restore HIT visibility
+- **Status:** pushed (2026-04-26) — awaiting Cowork SSH deploy (sandbox blocked direct deploy).
+- **Asked:**
+  - "different problem arose. can't kill the forum troll for some reason .. also we don't need the second troll thing that's right above the card.. just the top one"
+  - "clicking hit doesn't do anything. m was working before"
+- **Scope:** Two fixes in one pass.
+  1. **Single global banner.** Remove the in-thread "A Forum Troll has appeared" banner from `ThreadDetailView` body. The AppShell-rendered "FORUM TROLL SIGHTED!" banner (top of screen, filtered by `selectedThreadId`) is the single source of troll-state UI in every view from now on.
+  2. **HIT visible feedback.** Adam reported HIT clicks doing nothing. Diagnosis showed the API path and click handler are structurally unchanged from the working baseline (`b438f1f`); the most likely silent failure mode is a 4xx/5xx with a no-op response branch. Hardened `handleTrollHit` so EVERY failure path now produces a visible toast — auth missing, 401, 400 already-slain, 400 despawned, 404, 500, network error. This both restores user feedback AND gives a diagnostic surface on production so the actual regression cause is visible to Adam on next click.
+- **Files touched:**
+  1. [`../../components/ThreadDetailView.js`](../../components/ThreadDetailView.js) — removed `activeTroll` state, `_isTrollAlive`, `loadActiveTroll`, `huntTroll`, `refetchTrollRef`, `despawnTimerRef`, the thread-scoped `forum_trolls` realtime sub (INSERT/UPDATE/DELETE handlers), the despawn-timer `useEffect`, and the in-body banner JSX. Kept the `replies` realtime sub (separate concern). Net: ~110 lines removed. Pinned a comment at the JSX site explaining "do NOT add a per-thread banner back here" with pointer to docs.
+  2. [`../../components/AppShell.js`](../../components/AppShell.js) — `handleTrollHit` now early-exits with a toast if `getToken()` returns falsy; reads the response with `.json().catch(() => ({}))` so a non-JSON 4xx/5xx body doesn't blow up; checks `r.ok && data?.ok` before optimistic updates; surfaces server `data.error` (or `Hit failed (HTTP <status>)` fallback) on any non-ok path; surfaces `err.message` on network error. Net: +14 lines, behavior-preserving on success path.
+- **Why supersedes #53:** #53 hardened the in-thread banner's release path. #56 deletes the in-thread banner entirely. #53's value is preserved through the AppShell global sub (which already had its own #47 release-path contract; the global banner filtered by `selectedThreadId` updates live in this view from that sub).
+- **Commits:**
+  - `D4JSP/<#56 SHA>` — `fix(troll): remove redundant in-thread banner + visible HIT failure toasts (#56)`
+- **Deployed:** **NOT YET.** Cowork to run:
+  ```bash
+  ssh -i C:/Users/Owner/Desktop/keyz/d4jsp_kvm4_claude root@177.7.32.128 \
+    "cd /opt/d4jsp && git fetch origin main && git reset --hard origin/main && \
+     npm run build && pm2 reload d4jsp"
+  ```
+- **Verification (checklist — to run AFTER deploy):**
+  - [ ] Open a thread that has an active troll → ONLY the top "FORUM TROLL SIGHTED!" banner appears. No second "A FORUM TROLL HAS APPEARED" anywhere in the post body.
+  - [ ] Click the HIT button on the top banner → either HP decrements visibly OR a toast appears with the failure reason. NEVER nothing.
+  - [ ] If HP decrements: repeat clicks → 0 HP → troll dies → top banner clears → gem releases.
+  - [ ] If a toast appears: read the message and report back — that's the smoking gun for the actual HIT regression.
+  - [ ] Reply submission on the thread still works (we kept the `replies` sub).
+  - [ ] Reply realtime delivery still works (post a reply from another tab → see it appear here).
+  - [ ] Refresh during an active troll → top banner persists; refresh after kill → banner gone.
+  - [ ] Mobile + desktop both verified.
+- **Docs touched:** [`./features/forum-troll-gem.md`](./features/forum-troll-gem.md) — "Behavior — DO NOT BREAK" gains "Banners — single global banner only" subsection pinning the AppShell-only rule + #53 superseded; "Release-path contract" gains note that ThreadDetailView no longer participates. This batch-log entry. Removed the now-obsolete "Post-view live render (#53)" subsection (#53 was superseded before its docs SHA reached production).
+- **Rollback:** `git revert <#56 SHA>` then re-deploy. Brings back BOTH the redundant in-thread banner AND the silent-failure HIT path. No DB schema changes.
+- **If HIT still fails after deploy:** the visible toast should now make the cause obvious. Likely diagnostics it'll surface:
+  - `Session expired — please sign in again` → `getToken()` returning null mid-session (auth-context regression).
+  - `Hit failed (HTTP 401)` → token is being sent but server rejects — backend auth issue.
+  - `Hit failed (HTTP 404)` → troll row gone (already despawned/killed by another user, race).
+  - `Hit failed (HTTP 500)` + server error → backend regression in `/api/forum-trolls` POST hit handler.
+  - `Hit network error: <message>` → connectivity / nginx / PM2 issue.
 
 ---
 

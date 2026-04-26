@@ -55,6 +55,33 @@ Realtime is a fast hint, NOT the source of truth. RLS on `forum_trolls` isn't in
 
 **DO NOT remove the despawn `setTimeout` or the `isAlive` filter.** Both are #47's release-path safety net. Removing either re-introduces the gem-stuck-on regression.
 
+## Banners — single global banner only (#56 contract — supersedes #53)
+
+There is **exactly one** troll-state banner in the entire app. It lives in `AppShell.js` and renders only when `selectedThreadId` matches an alive troll's `thread_id`. Both the post-detail view and any other view that sets `selectedThreadId` see this single banner; **do NOT add a per-view variant**.
+
+History:
+- #46 introduced the EventTicker scrolling banner as the spawn announcement (kept).
+- #53 added a thread-scoped realtime sub + an in-thread "A Forum Troll has appeared" banner inside `ThreadDetailView` body for live spawn render. **Superseded.**
+- #56 (Adam: "we don't need the second troll thing that's right above the card.. just the top one") removed the in-thread banner + its thread-scoped sub + the despawn timer + `huntTroll` from `ThreadDetailView`. The AppShell global sub already keeps `activeTrolls` fresh; the AppShell-rendered "FORUM TROLL SIGHTED!" banner shows up wherever the user is on a thread that has a troll.
+
+**DO NOT** add any new `forum_trolls` realtime subscription, `activeTroll` state, in-thread banner JSX, or `huntTroll` handler back into `ThreadDetailView` (or any non-AppShell component). The AppShell global sub at `forum-trolls-global` channel + `selectedThreadId`-filtered render in `AppShell.js` is the single source of UI truth.
+
+If a future requirement needs richer per-thread troll UX (e.g., per-troll animation), implement it inside the AppShell render path — not by adding a second sub.
+
+## HIT failure feedback contract (#56)
+
+`AppShell.handleTrollHit` MUST surface a visible toast on every non-success path. The original code dropped non-`ok` responses into a no-op branch which manifested as Adam's "clicking hit doesn't do anything" regression. Pinned paths:
+
+| Cause | Branch | User toast |
+|---|---|---|
+| `getToken()` returns falsy | early return | "Session expired — please sign in again to hunt." |
+| HTTP `r.ok && data?.ok && data.killed` | optimistic remove + quest text or "⚔️ Forum Troll slain! First Blood!" | (positive — kept) |
+| HTTP `r.ok && data?.ok` (HP decrement) | merge HP into state | (no toast — silent positive update) |
+| Any other response | server `data.error` if present, else `Hit failed (HTTP <status>)` | visible 'err' toast |
+| `try/catch` network error | catch | `Hit network error: <err.message>` |
+
+**DO NOT remove the visible-failure toasts.** They're both UX (user knows the click registered) and a diagnostic surface — when something breaks in this path again, the toast tells us the cause without requiring browser dev tools.
+
 ## UI
 
 - **Page:** `/` (Latest Trades home).
