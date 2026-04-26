@@ -198,6 +198,7 @@ Server decrements HP. When HP hits 0:
 ## Related
 
 - [`./escrow.md`](./escrow.md) — sibling feature on Latest Trades feed
+- [`./tooltip.md`](./tooltip.md) — D4 item tooltip locked-size contract (rendered inside every Latest Trades card)
 - [`./realtime.md`](./realtime.md) — full list of realtime channels
 - [`./sell-pipeline.md`](./sell-pipeline.md) — what happens when a user uploads a screenshot
 - [`../catalogs/triggers.md`](../catalogs/triggers.md) — trigger registry schema

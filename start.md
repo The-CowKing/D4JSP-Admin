@@ -301,6 +301,7 @@ Adam's GamiPress-style spine. Read [`docs/modular-system/overview.md`](./docs/mo
 
 **Features** (cross-page concepts):
 - [`docs/features/forum-troll-gem.md`](./docs/features/forum-troll-gem.md) — the gem button + troll lifecycle
+- [`docs/features/tooltip.md`](./docs/features/tooltip.md) — D4 item tooltip locked-size contract + context-aware overflow
 - [`docs/features/escrow.md`](./docs/features/escrow.md) — buyer→seller FG hold
 - [`docs/features/sell-pipeline.md`](./docs/features/sell-pipeline.md) — OCR sell flow
 - [`docs/features/widgets.md`](./docs/features/widgets.md) — public widgets (WP-embed)
