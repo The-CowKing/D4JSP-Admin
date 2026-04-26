@@ -2,6 +2,45 @@
 
 Long-form version of the protocols section in [`../start.md`](../start.md). Both stay in sync; if they drift, start.md wins for the rules and this doc gets the rationale.
 
+## ⚠ HARD RULE: Fixed-supply FG vault — NEVER create new gold
+
+The 100,000,000,000 FG total supply is **fixed and immutable**. Every distribution comes from transitioning the existing pool between states; no path may ever push `circulating + reserved + burned > total_supply`.
+
+Adam (verbatim): *"yeah shouldnt be able to create new gold.."*
+
+**The four states:**
+- **IN VAULT** (unminted) — derived: `total_supply − circulating − reserved − burned`. The bulk inventory pre-launch.
+- **CIRCULATING** — held by users (sum of `users.fg_balance`).
+- **RESERVED** — held in active escrow (`fg_vault.reserved`).
+- **BURNED** — permanently destroyed (`fg_vault.burned`).
+
+**Reconciliation invariant:** `total_supply = in_vault + circulating + reserved + burned`. Always.
+
+### Allowed transitions
+- **unminted → circulating** (Stripe purchase, signup grant, admin grant, quest grant)
+- **unminted → reserved** (admin pre-allocates reward pool)
+- **reserved → circulating** (escrow release to buyer; quest grant from pre-allocated pool)
+- **circulating → reserved** (escrow lock when trade initiates)
+- **reserved → unminted** (escrow refund to vault)
+- **circulating → circulating** (user-to-user transfer; owner change only, total unchanged)
+- **circulating → burned** / **reserved → burned** (admin burn, permanent)
+
+### Forbidden
+- **NEVER `UPDATE users SET fg_balance = ...` directly.** Bypasses vault accounting → phantom gold (#73 root cause).
+- **NEVER INSERT a new row into `fg_vault` or any per-coin vault table.** The single aggregate row exists; never create more.
+- **NEVER mint past `total_supply`.** `lib/grantFg.js` enforces the cap and throws on attempts.
+
+### Implementation
+All FG-credit code paths MUST use the canonical helpers in [`../lib/grantFg.js`](../lib/grantFg.js) — `grantFgFromVault`, `chargeFgToVault`, `grantXp`. The helper:
+1. Inserts an `fg_ledger` audit row.
+2. Updates `users.fg_balance` (with floor at 0).
+3. Updates `fg_vault.circulating` in lockstep.
+4. Refuses to mint past `total_supply`.
+
+Full lifecycle, schemas, mint/grant/trade/burn flows, and audit follow-ups are documented in [`./numbered-fg-vault.md`](./numbered-fg-vault.md). That doc is the single source of truth for the FG money system; treat it as the contract.
+
+Real money. Bugs here are fraud-vector territory. Move with rigor.
+
 ## ⚠ HARD RULE: Verified-working flip workflow — NEVER auto-flip
 
 The "verified working" / "wired" / "green-lit" / "confirmed" switch on any catalog row (quests, triggers, specials, skills, badges, subscription tiers, fg_packages, ranks, etc.) is **flipped ONLY AFTER Adam confirms the feature works in production**.
