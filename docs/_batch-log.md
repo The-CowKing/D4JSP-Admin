@@ -11,11 +11,40 @@ The append-only ledger of user asks, what shipped, and how to roll back. **Read 
 
 ## Live now
 
-- **#46 — Banner-only announcement, drop legacy spawn toast, weekly limit (closed)** — `D4JSP/642c6ab` deployed to KVM 4. Three independent visual elements: click-anim (local), gem-on (realtime), banner (realtime). Bottom-right spawn toast removed. Weekly spawn limit added on `triggers.config.max_per_week` (admin-editable). Spot-check checklist below.
+- **#47 — Gem stuck on after kill / despawn (closed)** — `D4JSP/3b4ebdf` deployed to KVM 4. Release path now robust against realtime delivery semantics + passive despawn TTL. Cause was NOT a code regression (gem state machine matches pre-migration `b438f1f`) and NOT KVM 4 nginx (Supabase realtime is browser↔Supabase direct, KVM 4 isn't in that path). Cause was client-side dependency on realtime UPDATE-to-killed delivery + no despawn timer. Spot-check checklist below.
+- **#46 — Banner-only announcement, drop legacy spawn toast, weekly limit (closed)** — `D4JSP/642c6ab` deployed. Three independent visual elements: click-anim (local), gem-on (realtime), banner (realtime). Bottom-right spawn toast removed. Weekly spawn limit added on `triggers.config.max_per_week`.
 - **#45 — `/api/forum-trolls` cache + click-flash perception (closed)** — `D4JSP/bb200ce` deployed. Cache-Control: no-store, click-flash extended 180→320ms with snap-fast filter. Persistent glow now flips within ~1s of spawn instead of after 20s cache window.
 - **#44 — Gem moved off hero illustration (closed)** — `D4JSP/7e1febf` deployed. Reverts zIndex 9999→107 from #42; gem returns to anchor on goblin's gem in Latest Trades banner.
 - **#43 — Wiki + memory architecture build (closed)** — `D4JSP/8767582` + `D4JSP-Admin/c43ac83` + `D4JSP-Build-Planner/4c0e85b` + `D4JSP-Map/976c0c9`. All 4 repos verified clean.
 - **#42 — Gem button regression fix (closed)** — `D4JSP/00ec198`. Click-flash restored after `c5d83c8` regression.
+
+---
+
+## #47 — Gem stuck on after troll kill or despawn
+- **Status:** closed (2026-04-26)
+- **Asked:** "I even killed the forum troll to see if it would release it didnt." Plus: "it used to be on the cloud hosting that's when it worked" (timeline correlation, not the actual mechanism).
+- **Scope:** Make the gem release reliably on kill (server UPDATE sets `killed_at`) and on passive despawn (TTL expiry of `despawn_at`).
+- **Root cause:** Pre-edit diagnosis confirmed two negatives:
+  - Code (gem state machine in [`../../components/AppShell.js`](../../components/AppShell.js)) is structurally identical to the pre-migration good baseline `b438f1f`. No code revert needed.
+  - KVM 4 infra is fine for realtime: Supabase realtime is **browser ↔ `wss://isjkdbmfxpxuuloqosib.supabase.co/realtime/v1/websocket` direct**, KVM 4's nginx is NOT in that path. KVM 4's local WS proxy headers + PM2 cluster mode don't affect troll-state realtime delivery. The cloud→KVM 4 timeline correlation isn't a causal mechanism here.
+
+  Actual cause was client-side fragility:
+  1. `handleTrollHit` only optimistically removed the troll on `data.killed === true`. On a 400 response (server says "already slain" or "despawned") or any other non-killed outcome, no client state update fired — gem stayed glow-stuck until the next refetch.
+  2. Realtime UPDATE-to-killed delivery to anon clients depends on `forum_trolls` RLS policies that aren't in tracked migrations. If RLS filters the killed row out of anon's view post-update, the channel may receive no event (or a delete-from-view) and the existing handler relied on refetch firing only when an event arrived.
+  3. Passive despawn (`despawn_at` expiry) has no DB row change at all — realtime stays silent. The 2-min poll catches it eventually but the user isn't waiting 2 min.
+- **Commits:**
+  - `D4JSP/3b4ebdf` — `fix(troll-gem): release path robust against realtime delivery + passive despawn (#47)`
+- **Deployed:** KVM 4 via `git pull && npm run build && pm2 reload d4jsp`. PM2 online, HTTP 200, `/api/forum-trolls` still `Cache-Control: no-store`.
+- **Verification (checklist):**
+  - [ ] Fresh page load with no troll alive → gem clickable, normal state.
+  - [ ] Click gem → spawn fires → banner appears → gem enters glow within ~1s.
+  - [ ] Hit troll on its thread/ticker until HP=0 → gem releases within ~1s of the kill.
+  - [ ] Set a short `despawn_minutes` on the quest config, spawn a troll, wait for despawn → gem releases when TTL expires (not 2 min later).
+  - [ ] Refresh page after kill → gem stays off.
+  - [ ] Multiple spawn/kill cycles in a row → no leftover state.
+  - [ ] Mobile + desktop both verified.
+- **Docs touched:** [`./features/forum-troll-gem.md`](./features/forum-troll-gem.md) "Behavior — DO NOT BREAK" gains a Release-path subsection. [`./infra/kvm-4.md`](./infra/kvm-4.md) gains a "Realtime path is browser↔Supabase direct" note so future bots don't chase nginx WS headers when troll state misbehaves.
+- **Rollback:** `git revert 3b4ebdf` then re-deploy. Brings back the old fragile release path.
 
 ---
 

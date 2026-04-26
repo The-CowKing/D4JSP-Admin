@@ -45,6 +45,17 @@ ssh -i C:/Users/Owner/Desktop/keyz/d4jsp_kvm4_claude root@177.7.32.128 \
 
 Verify: `pm2 status d4jsp` shows `online`, `curl -I https://trade.d4jsp.org/` returns 200. See [`./deploy.md`](./deploy.md).
 
+## Realtime is browser ↔ Supabase direct (NOT via KVM 4)
+
+The Supabase realtime WebSocket connection is opened by the browser to `wss://isjkdbmfxpxuuloqosib.supabase.co/realtime/v1/websocket`. **KVM 4's nginx is NOT in that path.** The trade app's pages and `/api/*` routes go through KVM 4 nginx; realtime traffic does not.
+
+Implication for debugging troll-state / live-update issues:
+- KVM 4 nginx WS upgrade headers, `proxy_read_timeout`, PM2 cluster sticky-session config — none of those affect Supabase realtime delivery.
+- If `forum_trolls` UPDATEs aren't reaching the client, the cause is at Supabase (RLS policies, publication membership) or in the client subscription wiring — never at KVM 4.
+- Don't waste cycles tweaking nginx for realtime. See [`../features/forum-troll-gem.md`](../features/forum-troll-gem.md) "Release-path contract" for the client-side defensive design that #47 added so the trade app stops depending on realtime delivery semantics for kill/despawn release.
+
+KVM 4 nginx DOES still need WS-friendly headers for any FUTURE in-app WebSocket (e.g. if we ever add a custom WS server on `:3000`). The current config has them: `proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection 'upgrade'; proxy_cache_bypass $http_upgrade;`. Don't remove.
+
 ## TLS
 
 Certbot-managed Let's Encrypt cert. Auto-renew via systemd timer. See [`./dns-tls.md`](./dns-tls.md).

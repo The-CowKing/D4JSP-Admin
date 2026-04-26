@@ -31,6 +31,18 @@ The kill toast ("⚔️ Forum Troll slain! First Blood!") is a separate event (u
 
 `Cache-Control: no-store` on the GET. **DO NOT re-add `s-maxage` / `stale-while-revalidate`** — the 2-min idle poll on a single-row select is cheap, and any cache window will mask realtime spawns (the empty list gets cached pre-spawn and returned post-spawn until expiry). #45 root cause.
 
+## Release-path contract (#47)
+
+`trollActive` MUST flip false on three independent triggers. The client is responsible for catching all three; do NOT depend on Supabase realtime alone.
+
+1. **Kill (server UPDATE sets `killed_at`):** `handleTrollHit` always calls `refetch('hit-after')` after the server responds, regardless of `data.killed` / `data.ok`. The refetch hits `/api/forum-trolls` GET which filters out killed rows, so the next `setActiveTrolls(...)` excludes the dead troll.
+2. **Passive despawn (TTL expiry of `despawn_at`):** when `setActiveTrolls` lands an alive troll, a `setTimeout` is scheduled at `min(despawn_at) - now() + 250ms` that fires `refetch('despawn')`. No DB event is needed; the timer is the trigger.
+3. **Defensive client-side filter:** in `refetch`, the response is filtered through `isAlive(t) = !t.killed_at && new Date(t.despawn_at) > now()` before `setActiveTrolls`. Even if the API mistakenly includes a dead row (cache, RLS quirk, replay), the client refuses to display it as alive.
+
+Realtime is a fast hint, NOT the source of truth. RLS on `forum_trolls` isn't in tracked migrations — anon clients may or may not receive UPDATE-to-killed events depending on policy. The client refetches on every realtime payload but doesn't trust the payload's `new` row to derive state.
+
+**DO NOT remove the despawn `setTimeout` or the `isAlive` filter.** Both are #47's release-path safety net. Removing either re-introduces the gem-stuck-on regression.
+
 ## UI
 
 - **Page:** `/` (Latest Trades home).
