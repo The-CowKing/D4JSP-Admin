@@ -11,15 +11,84 @@ The append-only ledger of user asks, what shipped, and how to roll back. **Read 
 
 ## Live now
 
+- **#54 — Tooltip bottom-fixed pushed below frame on long-content preview (deployed, awaiting verify)** — `D4JSP/2c72c98` deployed to KVM 4 (PM2 online, HTTP 200, JS bundle confirmed contains `.whtt-container{...height:520px!important}` + `.whtt-scroll{flex:1 1 0!important;min-height:0!important;max-height:420px!important...}`). Mirrored to `D4JSP-Admin/111e402`, `D4JSP-Build-Planner/84c1334`, `D4JSP-Map/93a27e9`. Container locked at 520px; scroll-area uses `flex:1 1 0` to deterministically fill 420 within it; bottom-fixed structurally anchored at bottom 100. Cowork to run the 8-item verification checklist below.
+- **#52 — Troll spawn pool capped to top-page (closed)** — Config-only, no code change, no deploy. Set `quests.config.spawn_limit = 10` on the `Summon forum troll` quest (was unset → fell back to default 20). Matches `HomeView.js:402 PAGE_SIZE = 10` so trolls can only land on threads a hunter sees on page 1 of Latest Trades. Verified via service-role REST PATCH; quest row `8e715845-1caf-4cc3-bc7b-a11f8029d90d` now has `config: {"spawn_limit": 10}`.
 - **#51 — Banner + gem stuck on after killing one troll while others still alive (closed)** — `D4JSP/0204f6e` deployed to KVM 4. Root cause: rapid gem-clicks had spawned 4 alive trolls in `forum_trolls`; killing ONE left 3 alive, so banner + gem state (driven by global `activeTrolls.length > 0`) stayed on. Fix: server-side concurrent-alive cap on spawn via new `triggers.config.max_alive_concurrent` (default 1), 429 with `blocked: 'concurrent_limit'`. DB cleanup: 4 stuck rows (`24f5a5cd`, `b05033f1`, `e9fe34b1`, `ce5fb43f`) set `killed_at=NOW(), hp=0` via service-role REST. `/api/forum-trolls` now returns `{"trolls":[]}`.
+- **#50 — Tooltip + outer card sizing fix (Option A+) (deployed, awaiting verify)** — `D4JSP/3b631a5` deployed to KVM 4 (PM2 online, HTTP 200, JS bundle confirmed contains `min-height:380px!important;max-height:420px!important` + `.feed-thumb …whtt-scroll{overflow:hidden!important}`). Mirrored to `D4JSP-Admin/dd99c21`, `D4JSP-Build-Planner/1d6f8ec`, `D4JSP-Map/228628c`. Restores the locked-size contract from `03235db` (uniform-tooltip-height-flex-spacer-before-flavor) that `b0a8bea` deleted on 2026-04-17. Cowork to run the 16-item verification checklist below.
 - **#49 — Gem stops responding after trade cards mount (closed)** — `D4JSP/00013a0` deployed to KVM 4. Two issues: (1) gemPos was stuck on a 0-height measurement when the goblin image decoded after the 500ms setTimeout (slow mobile) — fixed via `<img onLoad>` re-measure; (2) gem zIndex 107 had only 1 step over cards-section z=106 — bumped to 109 (still below header z=110). Spot-check checklist below.
-- **#48 — Pre-tooltip-fix backup tag (closed)** — Tag `backup/2026-04-26-pre-tooltip` pushed to all 4 repos at current HEAD. Rollback target if tooltip work regresses anything.
+- **#48 — Pre-tooltip-fix backup tag (closed)** — Tag `backup/2026-04-26-pre-tooltip` pushed to all 4 repos at current HEAD. Rollback target if tooltip work regresses anything. (Note: #48 was previously used as a placeholder slot for tooltip diagnosis read-only — superseded by this backup-tag entry; diagnosis work folded into #50.)
 - **#47 — Gem stuck on after kill / despawn (closed)** — `D4JSP/3b4ebdf` deployed. Release path robust against realtime delivery semantics + passive despawn TTL.
 - **#46 — Banner-only announcement, drop legacy spawn toast, weekly limit (closed)** — `D4JSP/642c6ab` deployed. Three independent visual elements: click-anim (local), gem-on (realtime), banner (realtime). Bottom-right spawn toast removed. Weekly spawn limit added on `triggers.config.max_per_week`.
 - **#45 — `/api/forum-trolls` cache + click-flash perception (closed)** — `D4JSP/bb200ce` deployed. Cache-Control: no-store, click-flash extended 180→320ms with snap-fast filter. Persistent glow now flips within ~1s of spawn instead of after 20s cache window.
 - **#44 — Gem moved off hero illustration (closed)** — `D4JSP/7e1febf` deployed. Reverts zIndex 9999→107 from #42; gem returns to anchor on goblin's gem in Latest Trades banner.
 - **#43 — Wiki + memory architecture build (closed)** — `D4JSP/8767582` + `D4JSP-Admin/c43ac83` + `D4JSP-Build-Planner/4c0e85b` + `D4JSP-Map/976c0c9`. All 4 repos verified clean.
 - **#42 — Gem button regression fix (closed)** — `D4JSP/00ec198`. Click-flash restored after `c5d83c8` regression.
+
+---
+
+## #54 — Tooltip bottom-fixed pushed below frame on long-content preview
+- **Status:** deployed (2026-04-26) — awaiting Cowork verification on `https://trade.d4jsp.org/`
+- **Asked:** "instead of just hiding the stats flavour text or whatever can't fit to resize it's pushing the bottom of the tooltip out my but botton and stuff that's embedded in tooltip on preview"
+- **Symptom:** On preview cards, items with long content (e.g. Mortacrux with multiple drop sources + flavor text + extra stats) clipped the WRONG end. The `.d4-bottom-fixed` area (Buy Now button, price, "X AGO • Y VIEWS • LADDER" footer) was getting pushed BELOW the visible 156px frame at preview scale 0.3, while the stats area at top filled all available visible space. Buy button invisible. Adam expected: stats clip if they exceed; bottom-fixed always visible at the bottom of the locked frame.
+- **Root cause:** Layout shape from #50 used `.whtt-container { height: auto }` + `.whtt-scroll { flex: 1 0 auto; min-height: 380; max-height: 420 }`. With `height: auto`, the container size is the SUM of children's flex-resolved sizes. With `flex: 1 0 auto` (flex-shrink: 0) and `overflow: hidden` on the scroll-area in preview, flex's basis-resolution rules let the scroll-area's hypothetical size be content-driven (e.g. 500px for long items) under some conditions, making `max-height: 420px` ineffective at clamping. The container's auto-height absorbed the oversized scroll-area, total > 520, then `D4Tooltip.writeLayout` measured `inner.scrollHeight` past the locked target. Wrapper height exceeded `feed-thumb`'s 156px. The bottom-fixed sat below the visible 156, clipped by the parent's `overflow: hidden`. Post view didn't show this because `overflow-y: auto` (not hidden) interacts with flex's min-height-auto cascade differently — content > 420 simply scrolls inside the 420 box without expanding it.
+- **Fix:** Restructure the height lock to be deterministic regardless of overflow setting:
+  1. `.whtt-container` — change `height: auto !important` → `height: 520px !important`. Container size is now FIXED.
+  2. `.whtt-scroll` — change `flex: 1 0 auto !important; min-height: 380px !important; max-height: 420px !important` → `flex: 1 1 0 !important; min-height: 0 !important; max-height: 420px !important`. With flex-basis: 0, hypothetical size is 0; with flex-grow: 1, scroll-area grows to fill container minus bottom-fixed (= 420). max-height: 420 is now consistent with the available space.
+  3. Bottom-fixed (`.d4-bottom-fixed { flex-shrink: 0 }`) is unchanged — it sits at the bottom of the 520-tall container and can't be displaced. STRUCTURALLY anchored.
+  4. Spacer system unchanged — `.whtt-spacer { flex: 1 1 auto }` inside `.whtt-scroll` continues to fill empty space below flavor for short content.
+- **Files touched:** `components/D4Tooltip.js` (3 lines in `_injectBgOverride()`), `docs/features/tooltip.md` (contract section + DO NOT BREAK list updated for #54).
+- **HomeView wrapper chain:** unchanged — `cardH = round(520 * scale) + 12`, `innerH = round(520 * scale)`, `feed-thumb height = round(520 * scale)`. The math already targeted 520; previously the tooltip was overshooting it. Now the tooltip stays exactly at 520, matching the wrappers.
+- **Commits:**
+  - `D4JSP/2c72c98` — `fix(tooltip): anchor bottom-fixed (Buy Now/price/footer) at bottom of locked frame (#54)`
+  - `D4JSP-Admin/111e402` — `docs: sync tooltip wiki #54 (mirrors D4JSP 2c72c98)`
+  - `D4JSP-Build-Planner/84c1334` — `docs: sync tooltip wiki #54 (mirrors D4JSP 2c72c98)`
+  - `D4JSP-Map/93a27e9` — `docs: sync tooltip wiki #54 (mirrors D4JSP 2c72c98)`
+- **Deployed:** KVM 4 via SSH `git fetch origin main && git reset --hard origin/main && npm run build && pm2 reload d4jsp`. Verified: PM2 online, HTTP 200, deployed JS bundle (`/.next/static/chunks/pages/index-*.js`) contains both new CSS rules.
+- **Verification (checklist — to run via Cowork after deploy):**
+  - [ ] Preview card with long content (Mortacrux) → Buy Now button + price + FG icon + "X AGO • VIEWS • LADDER" footer visible at the bottom of the frame. Stats / flavor / drop-sources may be clipped at the bottom of the SCROLL AREA above the bottom-fixed.
+  - [ ] Preview card with short content (Rakanoth) → spacer fills middle of scroll area, Buy Now / price / footer at bottom of frame, all uniform card height with other cards.
+  - [ ] Post detail view long content → unchanged (scrolls internally), bottom-fixed always visible at bottom of frame.
+  - [ ] Post detail view short content → unchanged.
+  - [ ] All cards uniform height — #50's win must hold.
+  - [ ] Card-resize slider — cohesive resize unchanged.
+  - [ ] Tooltip's visual appearance pixel-identical (colors, fonts, OCR injection, drop sources, gold/blue/gray colored span treatment).
+  - [ ] Hover-zoom popup, long-press popup, click-to-thread, gem position — all unchanged.
+- **Docs touched:**
+  - updated: [`./features/tooltip.md`](./features/tooltip.md) — Locked-size contract section restructured to document `.whtt-container { height: 520px }` as THE single load-bearing rule; new "Bottom-fixed area — DO NOT clip" subsection; DO NOT BREAK list updated; #54 history entry.
+  - mirror: tooltip.md to D4JSP-Admin / D4JSP-Build-Planner / D4JSP-Map.
+- **Rollback:** `git revert <SHA>` then re-deploy KVM 4. Reintroduces the bottom-fixed-pushed-below regression on long-content preview cards.
+
+---
+
+## #52 — Troll spawn pool capped to top-page (10)
+- **Status:** closed (2026-04-26)
+- **Asked:** "change the setting for forum troll to only appear in one of the top page of posts.. 10 or whatever it is.." Then: "think it's set to latest 20 posts or sumtin now"
+- **Scope:** Constrain spawn pool to the threads a hunter actually sees on page 1 of Latest Trades. Match `HomeView.js:402 PAGE_SIZE = 10`. Pure config change, no code, no deploy.
+- **Diagnosis:** The field already exists. [`../../pages/api/quest-trigger.js:316-338`](../../pages/api/quest-trigger.js) `_pickRandomThread(spawnLocation, spawnLimit)` orders threads `created_at DESC` and `LIMIT spawnLimit`. `spawnLimit` is read from `quests.config.spawn_limit` with a fallback default of `20` ([`pages/api/quest-trigger.js:293`](../../pages/api/quest-trigger.js)). The `Summon forum troll` quest row had `config: {}` — empty — so it was using the legacy 20-default. Setting `spawn_limit: 10` on the quest row matches front-page size.
+- **Fix (data-only):** Service-role PATCH on quest `8e715845-1caf-4cc3-bc7b-a11f8029d90d`:
+  ```sql
+  UPDATE quests
+     SET config = jsonb_set(coalesce(config,'{}'::jsonb), '{spawn_limit}', '10', true)
+   WHERE id = '8e715845-1caf-4cc3-bc7b-a11f8029d90d';
+  ```
+  (Performed via Supabase REST PATCH; result row confirmed `config: {"spawn_limit": 10}`.)
+- **Commits:**
+  - None (config-only — no code change required, the spine already supports this field).
+  - `D4JSP/<docs SHA>` for batch-log + quests.md + quests-tab.md updates (this entry).
+- **Deployed:** N/A — server reads `quests.config` per-request, takes effect immediately. Verified via REST GET that `Summon forum troll` row reflects the new value.
+- **Verification (checklist):**
+  - [x] `quests.config.spawn_limit = 10` confirmed in Supabase.
+  - [x] Front-page size matches: `HomeView.js:402 PAGE_SIZE = 10`.
+  - [ ] Spawn a forum troll → confirm `forum_trolls.thread_id` is one of the 10 most-recent thread ids (sample top-10 was logged in batch verify; spot-check after next spawn).
+  - [ ] Older threads (page 2+) never receive a spawn.
+  - [ ] To tune: admin Quests tab → `Summon forum troll` quest config → edit `spawn_limit`. No redeploy needed.
+- **Docs touched:** [`./catalogs/quests.md`](./catalogs/quests.md) (`spawn_limit` description now pins the lock-step relationship with `PAGE_SIZE`). [`./admin/quests-tab.md`](./admin/quests-tab.md) (admin instructions for tuning the spawn pool size). This batch-log entry.
+- **Rollback:** Service-role PATCH back to 20 (or unset → falls back to default 20):
+  ```sql
+  UPDATE quests SET config = config - 'spawn_limit'
+   WHERE id = '8e715845-1caf-4cc3-bc7b-a11f8029d90d';
+  ```
+- **Why no code change:** the modular spine already exposes `spawn_limit` as a tunable. Adding "top_n" or "spawn_thread_pool" would have been duplicate config surface area for the same primitive. Keep the spine clean.
 
 ---
 
@@ -108,6 +177,50 @@ The append-only ledger of user asks, what shipped, and how to roll back. **Read 
      npm run build && pm2 reload d4jsp"
   ```
   Force-push warning: only safe because Adam authorized the rollback explicitly. Any commits made after the tag would be lost.
+
+---
+
+## #50 — Tooltip + outer card sizing fix (Option A+)
+- **Status:** deployed (2026-04-26) — awaiting Cowork verification on `https://trade.d4jsp.org/`
+- **Asked:** "push it see if we can fix it once and for all", "this isn't rocket science." Plus the full pinned contract from #48 diagnosis: tooltip outer dimensions locked, preview clips overflow, post scrolls overflow, short content shows empty space below flavor via the `whtt-spacer` system, all Latest Trades cards identical outer height.
+- **Scope:**
+  1. `components/D4Tooltip.js` — restore `min-height: 380px !important` (with `!important` on `max-height: 420px` for cascade safety) on `.wowhead-tooltip[data-game="d4"] .whtt-scroll`. Adds context-aware overflow rule `.feed-thumb .wowhead-tooltip[data-game="d4"] .whtt-scroll { overflow: hidden !important }` so preview cards clip while post view scrolls. Tooltip-only view mode (no `.feed-thumb` ancestor) defaults to scrollable per Adam's "yes that can be scrollable".
+  2. `components/HomeView.js` — re-lock the preview-card wrapper chain. `feed-thumb` gets `height: 520*scale, overflow: 'hidden'`; card outer gets `height: cardH = 520*scale + 12`; content wrapper gets `height: 520*scale`; left panel gets `height: 520*scale, overflow: 'hidden'` (the `overflow:hidden` here also fixes the desktop title-behind-tooltip stacking — left panel's `zIndex:2` was bleeding past `leftPanelW` over the right panel's title at `zIndex:1`).
+  3. `docs/features/tooltip.md` — new wiki page pinning the locked-size contract + spacer system + context-aware overflow + DO NOT BREAK subsection citing `03235db` (added) and `b0a8bea` (broke). Cross-linked from `start.md` and `forum-troll-gem.md`.
+- **Defaults confirmed by Adam:**
+  - Tooltip-only view mode (slider-resized) → scrollable.
+  - Preview card → clipped, shows whatever fits the locked dimensions.
+  - Bare-tip mode (slider ≥ 0.60) → still inside `.feed-thumb` → clipped (consistent with other preview behaviors).
+- **Commits:**
+  - `D4JSP/3b631a5` — `fix(tooltip): restore uniform-height contract + context-aware overflow (A+)`
+  - `D4JSP-Admin/dd99c21` — `docs: sync tooltip wiki addition (mirrors D4JSP 3b631a5)`
+  - `D4JSP-Build-Planner/1d6f8ec` — `docs: sync tooltip wiki addition (mirrors D4JSP 3b631a5)`
+  - `D4JSP-Map/228628c` — `docs: sync tooltip wiki addition (mirrors D4JSP 3b631a5)`
+- **Deployed:** KVM 4 via SSH `git fetch origin main && git reset --hard origin/main && npm run build && pm2 reload d4jsp`. Verified: PM2 online, HTTP 200, deployed JS bundle (`/.next/static/chunks/pages/index-*.js`) contains both new CSS rules.
+- **Verification (checklist — to run via Cowork after deploy):**
+  - [ ] DevTools → inspect any tooltip's `.whtt-scroll` → Computed shows `min-height: 380px` AND `max-height: 420px` AND `flex: 1 0 auto`.
+  - [ ] Post detail view, long-content thread (Mortacrux): outer tooltip frame at locked max. Stats area scrolls internally. Outer frame does NOT exceed max.
+  - [ ] Post detail view, short-content thread: outer frame at the same locked dimensions. Spacer-filled empty space pushes flavor / drop sources / footer to bottom. No scrollbar.
+  - [ ] Preview card on Latest Trades, long-content item (Mortacrux): outer tooltip at locked dimensions. Content beyond the frame clipped (flavor / drop sources hidden). NO scrollbar visible. Scrolling inside the tooltip area does NOT work.
+  - [ ] Preview card on Latest Trades, short-content item (Rakanoth): outer tooltip at locked dimensions. Content fits at top. Empty space below within locked frame. Card extends to locked card height.
+  - [ ] All Latest Trades cards on the page render at pixel-identical outer height.
+  - [ ] All tooltips inside those cards render at pixel-identical outer dimensions.
+  - [ ] Drag the slider through full range — ALL cards on the page resize together cohesively.
+  - [ ] Bare-tip mode (slider ≥ 0.60) — bare tooltip at the same locked dimensions.
+  - [ ] Hover-zoom on a preview card (desktop) — unchanged.
+  - [ ] Long-press on a preview card (mobile) — unchanged.
+  - [ ] Card click → opens thread. Unchanged.
+  - [ ] Tooltip's visual appearance pixel-identical to current (colors, fonts, borders, OCR injection, drop sources, price + buy-now button, gold/blue/gray colored span treatment).
+  - [ ] Forum troll gem still anchored on the goblin's gem in the banner.
+  - [ ] Desktop — title text on every card fully visible (no clipping by tooltip).
+  - [ ] Mobile — tooltip on left, card info on right, all clean.
+  - [ ] No console errors, no `ResizeObserver loop completed with undelivered notifications` regressions.
+- **Docs touched:**
+  - new: [`./features/tooltip.md`](./features/tooltip.md)
+  - updated: [`../start.md`](../start.md) (Features TOC)
+  - updated: [`./features/forum-troll-gem.md`](./features/forum-troll-gem.md) (Related cross-link)
+  - mirror: tooltip.md to D4JSP-Admin / D4JSP-Build-Planner / D4JSP-Map per cross-repo wiki protocol.
+- **Rollback:** `git revert <SHA>` then re-deploy KVM 4. Brings back per-card height variance + desktop title-behind-tooltip stacking. No DB or infra changes.
 
 ---
 

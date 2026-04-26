@@ -12,6 +12,7 @@ CRUD on `quests` catalog and `triggers.config`. Drives every quest in the system
 
 To change troll behavior:
 - HP / despawn: edit `quests.config` (`clicks_to_kill`, `despawn_minutes`, `spawn_location`, `spawn_limit`).
+- **Spawn pool size** — `quests.config.spawn_limit` (currently `10`). The troll only spawns on a thread within the most-recent N. Keep this in lockstep with the front-page size (`HomeView.js` `PAGE_SIZE`, today = 10) so spawns can only land on threads a hunter can see on page 1. Default fallback if unset = 20 (legacy). Set in #52.
 - Click chain target: edit `triggers.config.min` / `max`.
 - Tier gate: edit `triggers.config.allowed_subscriptions`.
 - Lifecycle: edit `triggers.config` (`expires_after`, `recurring`, `on_expiry`).

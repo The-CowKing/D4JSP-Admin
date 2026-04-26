@@ -22,7 +22,7 @@ Objectives bound to triggers. When a trigger fires, all matching active quests a
 - `clicks_to_kill` — for `forum_troll_spawned`: troll HP
 - `despawn_minutes` — for trolls
 - `spawn_location` — `any` / `ladder` / `eternal` / `d4` / `d2r` / `d3`
-- `spawn_limit` — only consider the N most recent threads in the chosen category
+- `spawn_limit` — only consider the N most recent threads in the chosen category. **Should match the Latest Trades front-page size** (`HomeView.js` `PAGE_SIZE = 10`) so spawns can only land on threads a user can actually see on page 1. Default fallback if unset = 20 (legacy). Currently set to **10** for `Summon forum troll` quest — see #52 in [`../_batch-log.md`](../_batch-log.md).
 
 ## quest_progress (per-user state)
 
