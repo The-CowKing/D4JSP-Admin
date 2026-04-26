@@ -93,6 +93,25 @@ Visual feedback that the gem is locked is provided by the persistent `.gem-press
 
 **DO NOT** remove either early-return. Without them, a stale-state race produces the corner-toast nag (Adam's #59 root complaint) AND wastes API calls + click-flash on no-op clicks.
 
+## Reward grant chain (#61 contract — DO NOT BREAK)
+
+Both `Summon forum troll` (daily, trigger `forum_troll_spawned`) and `First Blood` (one_time, trigger `forum_troll_slain`) award FG + XP. The grant chain MUST follow the ledger-first contract from [`../data-model/fg-ledger.md`](../data-model/fg-ledger.md):
+
+| Step | Where | What |
+|---|---|---|
+| 1 | `_parseQuestRewards(quest)` | Read `quest.rewards` jsonb array first (modern shape `[{type:'fg',value:'200'},{type:'xp',value:'10000'}]`), fall back to `quest.fg_reward` / `quest.xp_reward` legacy scalars. |
+| 2 | `_grantQuestRewards` (spawn) / `_grantKillQuestRewards` (kill) | INSERT into `fg_ledger` first: `from_uid: null` (vault), `to_uid: user.id`, `amount`, `reason: 'quest_complete'`, `ref_id: quest.id`. |
+| 3 | same | Call `increment_user_fg` SECURITY DEFINER RPC for atomic `users.fg_balance` + vault accounting. |
+| 4 | same | Apply XP via direct `users` UPDATE. (No `increment_user_xp` RPC yet — small lost-update window acceptable for non-money state.) |
+| 5 | same | Throw on any failure. The caller's `quest_progress.upsert` does NOT run on throw, so a retry picks up cleanly. |
+| 6 | quest-trigger.js / forum-trolls.js | Upsert `quest_progress` AFTER grant. Order is intentional — see #61 in [`../_batch-log.md`](../_batch-log.md). |
+
+**DO NOT** read `quest.fg_reward` / `quest.xp_reward` directly without going through `_parseQuestRewards`. Both helpers are duplicated across files (one in quest-trigger.js, one in forum-trolls.js); keep them in sync. The duplication is intentional — both files need to grant from a quest row and we don't want a shared util that doesn't exist yet.
+
+**DO NOT** flip the order back to upsert-then-grant. The grant-throws path was the silent FG loss Adam reported — `quest_progress.completed=true` with no FG and no retry path. Grant-then-upsert means a transient failure is recoverable.
+
+**DO NOT** bypass `fg_ledger`. Ledger-first is the integrity contract for real money. Even if it feels redundant for "small" quest grants, the ledger is the source of truth for reconciliation and audit; the balance is a denormalised cache.
+
 ## HIT failure feedback contract (#56)
 
 `AppShell.handleTrollHit` MUST surface a visible toast on every non-success path. The original code dropped non-`ok` responses into a no-op branch which manifested as Adam's "clicking hit doesn't do anything" regression. Pinned paths:

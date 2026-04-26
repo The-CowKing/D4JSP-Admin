@@ -11,12 +11,13 @@ The append-only ledger of user asks, what shipped, and how to roll back. **Read 
 
 ## Live now
 
+- **#61 — Reward grants broken end-to-end for spawn + kill quests (deployed, awaiting verify)** — `D4JSP/ac958e1` deploying to KVM 4. Adam: "the rewards aren't deploying I have 0 forum gold the quest for spawning and killing both award gold"; "yah it's also real gold not fake gold"; "vault". Diagnosis: live quest rows (Summon forum troll, First Blood) have `xp_reward=0 + fg_reward=0` scalar columns but populated `rewards` jsonb arrays — the grant code read only the legacy scalars, so neither spawn nor kill granted anything. `quest_progress` was empty system-wide; `fg_ledger` had only the genesis row; Adam's `fg_balance=0` despite multiple kills today. Fix: new `_parseQuestRewards` helper reads modern array first with legacy fallback. New `_grantQuestRewards` (quest-trigger.js) and `_grantKillQuestRewards` (forum-trolls.js) write fg_ledger row first (vault → user, immutable audit) then call `increment_user_fg` RPC (SECURITY DEFINER, atomic balance + vault accounting), then XP. Reordered grant-before-progress-upsert so grant failures don't lock out retry. Idempotency via existing.completed gate.
 - **#60 — Top ticker desktop empty-gap regression (deployed, awaiting verify)** — `D4JSP/04a802d` (pixel-keyframe marquee fix — eliminates the gap mathematically) + `D4JSP/bb86aca` (desktop-only "Welcome to D4JSP — Live Trading" static fill behind the marquee per Adam's "fill desktop to have welcome to d4jsp live trading or sumtin"). Both deployed to KVM 4. Belt + suspenders: animation distance is now correct AND there's a static brand layer if any visual remainder shows up across browsers/zoom. Mobile unchanged (welcome text hidden via `max-width: 767px` rule).
 - **#59 — Lock gem when alive + drop redundant 'already lurking' toast (deployed, awaiting verify)** — `D4JSP/82ecbe4` deployed to KVM 4 (PM2 online, HTTP 200). Adam: corner toast "forum troll summoned already" was firing while top banner empty + gem still clickable. Three changes: (1) HomeView gem onClick early-returns when `trollActive=true` — no click-flash, no API call. (2) AppShell `handleGemClick` defensive early-return on `activeTrolls.length > 0`. (3) On `concurrent_limit` server response, refetch banner state instead of toasting (server's "already alive" becomes a SIGNAL, not a notification). `weekly_limit` toast preserved (different semantic — no banner to convey it).
 - **#58 — FG package placeholder artwork (queued)** — Adam: "the FG package used to have proper images for alot of them. at some point placeholders were put in." Hint: "probably on supabase in bucket." Blocked behind #57. Restore proper per-package artwork — likely the Supabase Storage URLs in `fg_packages.image_url` were overwritten with placeholder paths; real images still in the bucket.
 - **#57 — Stripe payment flow broken since KVM 4 migration (queued, partial diagnosis)** — Adam: subscribe in-page modal "PAY NOW" does nothing; Buy FG fails. Diagnosed: `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` is set on KVM 4 (verified via NAMES-only grep). `STRIPE_SECRET_KEY` env presence not yet confirmed (harness blocks listing prod env vars). Architecture: PaymentIntent + Elements (in-page), NOT Checkout redirect — Adam's expectation of "redirect to checkout.stripe.com" was incorrect; the in-page modal IS the intended flow. Root cause hypothesis: `stripe.confirmPayment` silently returns when stripe/elements null (loadStripe failure, or a 4xx from confirm with no UI surfacing). Fix path: harden CheckoutForm.submit with visible toasts on every silent path (mirror of #56 hardening pattern). Top priority after #59/#60 ship.
 - **#56 — Remove redundant in-thread troll banner + restore HIT visibility (closed)** — `D4JSP/57b9c53` deployed to KVM 4. Adam confirmed: "forum troll hit worked." Single banner globally; HIT decrements HP; troll dies; gem releases; banner clears. Done.
-- **#55 — Tooltip + user-info clipping on desktop only (deployed, awaiting verify)** — `D4JSP/bd66237` deployed to KVM 4 (PM2 online, HTTP 200, JS bundle confirmed contains the new `white-space:normal!important;overflow-wrap:anywhere!important;max-width:300px!important` rules on tooltip tables/cells + `overflow-wrap:anywhere!important;word-break:break-word!important` on `.whtt-scroll` descendants). Mirrored to `D4JSP-Admin/1534a7f`, `D4JSP-Build-Planner/96e5685`, `D4JSP-Map/d8f49b7`. Mirrors the mobile-only wrap-override globally so desktop also wraps tooltip tables/cells/text within the locked 300px width. Username `wordBreak:'break-word'` → `overflowWrap:'anywhere'; hyphens:'auto'` for hard-break fallback. Cowork to run the 9-item verification checklist.
+- **#55 — Tooltip + user-info clipping on desktop — follow-up (open)** — First pass (`bd66237`) deployed but didn't fix the desktop clip per Adam's verification (after cache clear). Two missing pieces in the first pass: (1) `.whtt-scroll *` rule had `overflow-wrap + word-break` but NO `white-space:normal` — wrap rules only fire when wrapping is allowed; inherited `nowrap` kept text single-line with ellipsis truncation. Added `white-space:normal !important`. (2) `.whtt-container` was `overflow:visible` — descendant content extending past 300px corrupted D4Tooltip's `writeLayout` scrollWidth measurement, visibly clipping the right edge inside `.feed-thumb`. Changed to `overflow:hidden !important` (floating `.whtt-tooltip-icon` is a sibling, not descendant — unaffected). Username clip: `wordBreak:'break-word'` → `'break-all'` + explicit `whiteSpace:'normal'` (break-all breaks at any character, not just unbreakable words). Mirror to siblings.
 - **#53 — Live troll render in post view (superseded by #56)** — `D4JSP/536c6a7` pushed but never deployed. The in-thread banner that #53 hardened was removed in #56 because Adam decided he wants only one banner globally. The thread-scoped sub is gone; the AppShell global sub already drives the (single, top-of-screen) banner including for users on the affected thread.
 - **#54 — Tooltip bottom-fixed pushed below frame on long-content preview (deployed, awaiting verify)** — `D4JSP/2c72c98` deployed to KVM 4 (PM2 online, HTTP 200, JS bundle confirmed contains `.whtt-container{...height:520px!important}` + `.whtt-scroll{flex:1 1 0!important;min-height:0!important;max-height:420px!important...}`). Mirrored to `D4JSP-Admin/111e402`, `D4JSP-Build-Planner/84c1334`, `D4JSP-Map/93a27e9`. Container locked at 520px; scroll-area uses `flex:1 1 0` to deterministically fill 420 within it; bottom-fixed structurally anchored at bottom 100. Cowork to run the 8-item verification checklist below.
 - **#52 — Troll spawn pool capped to top-page (closed)** — Config-only, no code change, no deploy. Set `quests.config.spawn_limit = 10` on the `Summon forum troll` quest (was unset → fell back to default 20). Matches `HomeView.js:402 PAGE_SIZE = 10` so trolls can only land on threads a hunter sees on page 1 of Latest Trades. Verified via service-role REST PATCH; quest row `8e715845-1caf-4cc3-bc7b-a11f8029d90d` now has `config: {"spawn_limit": 10}`.
@@ -75,7 +76,19 @@ The append-only ledger of user asks, what shipped, and how to roll back. **Read 
 ---
 
 ## #55 — Tooltip right-edge + user-info clipping on desktop
-- **Status:** deployed (2026-04-26) — awaiting Cowork verification on `https://trade.d4jsp.org/`
+- **Status:** follow-up open (2026-04-26) — first pass (`bd66237`) didn't fix the desktop clip per Adam's verification with cache clear; second-pass commit pending.
+
+### Follow-up (2026-04-26): why first pass missed
+- Adam's screenshot showed mid-word truncation with ellipsis (`...the m...`), which is the hallmark of `white-space: nowrap + text-overflow: ellipsis` — text is on a single line and clipped, not multi-line wrapping. The first-pass `.whtt-scroll *` rule added `overflow-wrap:anywhere + word-break:break-word` but those CSS properties only take effect WHEN wrapping is allowed. With `white-space:nowrap` inherited from somewhere up the cascade (likely a parent td or ancestor element), child text stays single-line and the wrap rules are no-ops.
+- Additionally, `.whtt-container` had `overflow:visible !important`. Any descendant with content extending past the locked 300px tooltip width visibly bled out — D4Tooltip's `writeLayout` then measured `inner.scrollWidth > 300`, sized the wrapper too wide, and `.feed-thumb { overflow: hidden }` clipped the right edge visibly. Setting container `overflow:hidden` clips internal overflow at 300px so scrollWidth stays correct.
+- Username: `wordBreak: 'break-word'` only breaks unbreakable single tokens; for "THE COW KING" the browser tried space-breaks first. At desktop's font-rendering precision, "THE COW " could render slightly over 60px, pushing the wrap point. `wordBreak: 'break-all'` is more aggressive — breaks at any character if needed.
+
+### Follow-up fix
+1. `components/D4Tooltip.js` — `.whtt-container { overflow: visible → hidden !important }`. `.whtt-scroll *` rule gains `white-space: normal !important`. (2 line-changes in `_injectBgOverride()`.)
+2. `components/HomeView.js` — username span: `wordBreak: 'break-word' → 'break-all'`, add explicit `whiteSpace: 'normal'`.
+
+### Original (first-pass) details below
+
 - **Asked:** "this is the closest it's ever been but the right hand side of the tool tip is clipping only on pc phone is absolutely perfect" + "the user Info is clipping too now on computer"
 - **Symptom (desktop only, mobile perfect):**
   - Tooltip flavor text and other text inside the tooltip clipping mid-word at the right edge ("Treat carefully on the plains of Hell, for each step sunders the soul and shatters the m...").
@@ -121,6 +134,74 @@ The append-only ledger of user asks, what shipped, and how to roll back. **Read 
   - updated: [`./features/tooltip.md`](./features/tooltip.md) — #55 history entry, new "Desktop layout — DO NOT NARROW the left panel" subsection, DO NOT BREAK item #9 added (desktop wrap rules).
   - mirror: tooltip.md to D4JSP-Admin / D4JSP-Build-Planner / D4JSP-Map.
 - **Rollback:** `git revert <SHA>` then re-deploy KVM 4. Reintroduces desktop right-edge clip + username truncation.
+
+---
+
+## #61 — Reward grants broken end-to-end for spawn + kill quests
+- **Status:** deployed (2026-04-26) — awaiting Cowork manual verification on `https://trade.d4jsp.org/`.
+- **Asked:**
+  - "the rewards aren't deploying I have 0 forum gold the quest for spawning and killing both award gold make sure all wiring is right"
+  - "and xp"
+  - "yah it's also real gold not fake gold from goldmcsult" (FG is real money paired to Stripe top-ups; needs ledger discipline)
+  - "vault" (numbered FG vault system reference — every grant needs to flow through proper vault accounting)
+- **Diagnosis (data — service-role REST):**
+  ```sql
+  SELECT id, name, trigger_id, xp_reward, fg_reward, rewards FROM quests
+   WHERE trigger_id IN ('forum_troll_spawned', 'forum_troll_slain');
+  ```
+  ```
+  Summon forum troll  | forum_troll_spawned | xp_reward=0 | fg_reward=0
+                      | rewards=[{type:"fg",value:"200"},{type:"xp",value:"10000"}]
+  First Blood         | forum_troll_slain   | xp_reward=0 | fg_reward=0
+                      | rewards=[{type:"fg",value:"500"},{type:"xp",value:"20000"}]
+  ```
+  Plus:
+  ```
+  quest_progress count = 0 system-wide  (no completion ever recorded)
+  fg_ledger     count = 1 (genesis row only — no quest grant has ever written here)
+  Adam's fg_balance = 0, xp = 22, despite multiple spawn + kill cycles today
+  ```
+- **Root cause:** Both `_grantQuestRewards` (`pages/api/quest-trigger.js`) and `_progressTrollKillQuests` (`pages/api/forum-trolls.js`) read ONLY the legacy `xp_reward` / `fg_reward` scalar columns. The live quest rows have those at 0 with the modern `rewards` jsonb array populated instead. The grant code consequently no-op'd on every completion. Ledger writes were entirely absent (audit M-2). Plus the upsert-then-grant order silently lost FG when the grant later threw — `quest_progress.completed=true` with no FG and no retry path.
+- **Fix:**
+  1. **`_parseQuestRewards(quest)`** helper (defined in both files, identical body) — reads `quest.rewards` array first, falls back to `quest.fg_reward` / `quest.xp_reward` for legacy quests. Returns `{fg, xp}` integers.
+  2. **`_grantQuestRewards` rewrite** in [`../../pages/api/quest-trigger.js`](../../pages/api/quest-trigger.js):
+     - INSERT into `fg_ledger` first (`from_uid: null` = vault, `to_uid: user.id`, `amount: fg`, `reason: 'quest_complete'`, `ref_id: quest.id`). Audit row is the source of truth.
+     - Call `increment_user_fg` SECURITY DEFINER RPC for atomic balance + vault accounting (same RPC used by Stripe top-ups, gamble payouts, admin grants — see `pages/api/admin/gamble.js:329`).
+     - Apply XP via direct `users` UPDATE (no `increment_user_xp` RPC exists yet — lost-update window is acceptable for non-money state).
+     - Throw on any error so caller's quest_progress upsert doesn't run, retry picks up cleanly.
+  3. **`_grantKillQuestRewards`** new function in [`../../pages/api/forum-trolls.js`](../../pages/api/forum-trolls.js) — same shape as #2. The kill path also needed the rewards array support.
+  4. **Reordered grant-before-progress-upsert** in both paths. Old order (upsert → grant) silently lost FG when grant threw. New order (grant → upsert) leaves quest_progress incomplete on grant failure → retry succeeds.
+  5. **Idempotency** held by the upstream `existing.completed` gate at the top of each loop — only the false→true transition for a `(user, quest)` row reaches the grant code. For `daily` type quests the gate is per-day; for `one_time` it's permanent.
+- **Files touched:**
+  - `pages/api/quest-trigger.js` — `_parseQuestRewards`, rewritten `_grantQuestRewards`, reordered grant-before-upsert.
+  - `pages/api/forum-trolls.js` — `_parseQuestRewards`, new `_grantKillQuestRewards`, simplified `_progressTrollKillQuests` to use it.
+- **Commits:**
+  - `D4JSP/ac958e1` — `fix(rewards): restore FG + XP grants for forum_troll spawn + kill quests (#61)`
+- **Deployed:** KVM 4. PM2 online, HTTP 200, `/api/forum-trolls` healthy.
+- **Baseline (pre-test, captured at deploy):**
+  - Adam (`a4b49503-fd64-4082-bc48-12d695c0808a`): `fg_balance=0, xp=22`.
+  - `fg_ledger`: 1 row (genesis only).
+  - `quest_progress`: 0 rows system-wide.
+  - 1 alive troll (`ee90de7b-03c3-47ca-85d8-f74b264dd9e6`, hp=3) on a top-10 thread.
+- **Verification (checklist — Cowork to run):**
+  - [ ] Adam clicks gem until next spawn → his `fg_balance` += 200 (Summon forum troll daily reward).
+  - [ ] Adam's `xp` += 10000.
+  - [ ] `quest_progress` has a row for `(adam_id, summon_quest_id)` with `completed=true`.
+  - [ ] `fg_ledger` has a row with `from_uid=NULL, to_uid=adam_id, amount=200, reason='quest_complete', ref_id=summon_quest_id`.
+  - [ ] Adam hits the spawned troll until HP=0 → `fg_balance` += 500 (First Blood one_time reward, only first time).
+  - [ ] `xp` += 20000.
+  - [ ] `quest_progress` has a row for `(adam_id, first_blood_quest_id)` with `completed=true`.
+  - [ ] `fg_ledger` has a row with `amount=500, reason='quest_complete', ref_id=first_blood_quest_id`.
+  - [ ] Reconciliation: `users.fg_balance` for Adam == sum(fg_ledger amount where to_uid=Adam) - sum(fg_ledger amount where from_uid=Adam). For a fresh user with only quest grants, equals the sum of grants.
+  - [ ] Repeat spawn (next day for daily): grants fire again. First Blood does NOT re-grant (one_time).
+  - [ ] Mobile + desktop both verified.
+- **Known follow-up gaps (not in this commit, file as future work):**
+  - **`process_trigger` PL/pgSQL specials grant.** That function (Supabase-only, audit H-10) handles `specials` rewards and may also bypass `fg_ledger`. Out of scope here — fix when restoring `process_trigger` to migrations. Currently no specials are firing for forum_troll triggers per `special_claims` query.
+  - **`increment_user_xp` RPC.** Should mirror `increment_user_fg` for atomic XP grants. Lost-update window is small but real.
+  - **`fg_vault.circulating` invariant.** The doc says `fg_vault.circulating + escrow.held = sum(users.fg_balance)`. Whether `increment_user_fg` updates `fg_vault.circulating` is unverifiable from the JS layer (need to read the SECURITY DEFINER source on Supabase). If it doesn't, vault drifts. Track separately.
+  - **One-shot reconciliation script.** Periodically: `SELECT user_id, SUM(amount) FROM fg_ledger GROUP BY ... ` vs `users.fg_balance` — alert on drift.
+- **Docs touched:** [`./features/forum-troll-gem.md`](./features/forum-troll-gem.md) gains "Reward grant chain" section pinning the modern `rewards` array + ledger-first contract. [`./data-model/fg-ledger.md`](./data-model/fg-ledger.md) updated to remove `quest-trigger.js` from the "currently bypassing" list. This batch-log entry.
+- **Rollback:** `git revert ac958e1` then re-deploy. Brings back the silent-no-op grant. Existing fg_ledger rows from #61 grants stay (immutable audit). Users.fg_balance changes from grants don't auto-reverse — would need a corresponding burn ledger row + decrement RPC to fully undo. Avoid rolling back unless absolutely necessary.
 
 ---
 
