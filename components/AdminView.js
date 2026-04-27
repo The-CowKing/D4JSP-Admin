@@ -1476,6 +1476,7 @@ function GoldTab({ token }) {
             {[
               { id: '044', title: 'Phantom-FG Backfill', desc: 'Allocates fg_serial_ranges for every users.fg_balance > 0 (humans + bots). Reconciles fg_vault aggregate from truth. Idempotent — re-runs only fill gaps.' },
               { id: '045', title: 'GODLY avatar_glow Perk', desc: 'Inserts avatar_glow into the skills catalog and attaches it to the GODLY tier\'s subscription_tiers.skills array. Idempotent.' },
+              { id: '046', title: 'Reconcile Escrow Vault', desc: 'Sets fg_vault.reserved = SUM(escrow.fg_amount WHERE status=held) and adjusts circulating to match. Backfills fg_ledger audit rows for held escrows that pre-date the chokepoint helpers. Idempotent — re-runs are no-ops once aggregates match.' },
             ].map(m => {
               const result = migrationResults[m.id];
               const running = migrationRunning === m.id;
