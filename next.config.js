@@ -8,6 +8,12 @@ const nextConfig = {
   poweredByHeader: false,
   pageExtensions: ['js', 'jsx', 'ts', 'tsx'],
 
+  // #88: trade app proxies /admin-panel/** → this app on :3001. Without
+  // basePath the admin app serves at '/' and /admin-panel returns 404.
+  // basePath also moves all _next/* assets under /admin-panel/_next/*
+  // so they don't collide with the main app's bundle paths.
+  basePath: '/admin-panel',
+
   // Proxy all /api/admin/* calls to the main trade app.
   // AdminView.js fetch paths stay unchanged ('/api/admin/...');
   // Next.js server forwards them to trade.d4jsp.org including auth headers.
