@@ -5431,6 +5431,12 @@ function RanksTab({ token, rankRewards, setRankRewards }) {
   const [rankSubTab, setRankSubTab] = useState('rewards');
   // Per-assignment skill configs for ranks: { [rank]: { [skillId]: configObj } }
   const [rankSkillConfigs, setRankSkillConfigs] = useState({});
+  // Save flow state — per-rank: { saving: bool, msg: string, ok: bool }
+  const [rankSaveState, setRankSaveState] = useState({});
+  // Stored per-rank rewards loaded from /api/admin/rank-rewards (id keyed
+  // by `${rank}:${skill_id}` so we can update existing rows by UUID rather
+  // than insert dupes on each save).
+  const [storedRankRewardIds, setStoredRankRewardIds] = useState({});
 
   const api = useCallback(async (method, body, query = '') => {
     const opts = { headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' } };
@@ -5442,6 +5448,98 @@ function RanksTab({ token, rankRewards, setRankRewards }) {
   useEffect(() => {
     if (token) api('GET', null).then(r => { if (r.skills) setSkills(r.skills); });
   }, [token, api]);
+
+  // #129 (launch-day): load existing rank → reward bindings from the
+  // rank_rewards table on mount so admin sees what's already configured
+  // and Save updates by id (no dupes). Falls through silently if 053
+  // hasn't been MCP-applied yet (PGRST schema-cache returns 4xx).
+  useEffect(() => {
+    if (!token) return;
+    fetch('/api/admin/rank-rewards', { headers: { Authorization: 'Bearer ' + token } })
+      .then(r => r.json())
+      .then(d => {
+        if (!d?.ok || !d.rewards) return;
+        const idMap = {};
+        const cfgs = {};
+        const assigns = {};
+        for (const [rankStr, rows] of Object.entries(d.rewards)) {
+          const rank = parseInt(rankStr, 10);
+          for (const r of rows) {
+            if (r.skill_id) {
+              idMap[`${rank}:${r.skill_id}`] = r.id;
+              (assigns[rank] ||= []).push(r.skill_id);
+              (cfgs[rank] ||= {});
+              cfgs[rank][r.skill_id] = {
+                amount: r.amount,
+                duration_minutes: r.duration_minutes,
+              };
+            }
+          }
+        }
+        setStoredRankRewardIds(idMap);
+        // Merge into rankRewards/rankSkillConfigs WITHOUT clobbering UI-only edits.
+        setRankRewards(prev => ({ ...assigns, ...prev }));
+        setRankSkillConfigs(prev => {
+          const merged = { ...cfgs };
+          for (const [r, c] of Object.entries(prev)) merged[r] = { ...(merged[r] || {}), ...c };
+          return merged;
+        });
+      })
+      .catch(() => {});
+  }, [token, setRankRewards]);
+
+  // Save all skill bindings for one rank in a single batch — one POST per
+  // skill row; success/failure aggregated per rank. Backend endpoint is
+  // /api/admin/rank-rewards (POST → upsert by id when present, insert
+  // otherwise; #129 returns {ok: true, reward}).
+  const saveRankRewards = useCallback(async (rank) => {
+    setRankSaveState(prev => ({ ...prev, [rank]: { saving: true, msg: '', ok: null } }));
+    const skillIds = (rankRewards[rank] || []).map(e => (typeof e === 'string' ? e : e.id));
+    let okCount = 0;
+    let failMsg = '';
+    const newIdMap = { ...storedRankRewardIds };
+    for (const skillId of skillIds) {
+      const cfg = rankSkillConfigs[rank]?.[skillId] || {};
+      const idKey = `${rank}:${skillId}`;
+      const body = {
+        id: storedRankRewardIds[idKey] || undefined,
+        rank_level: rank,
+        reward_type: 'skill_grant',
+        skill_id: skillId,
+        amount: Number(cfg.amount) || 0,
+        duration_minutes: cfg.duration_minutes != null ? Number(cfg.duration_minutes) : null,
+      };
+      try {
+        const r = await fetch('/api/admin/rank-rewards', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+          body: JSON.stringify(body),
+        });
+        const d = await r.json();
+        if (d.ok && d.reward) {
+          okCount++;
+          newIdMap[idKey] = d.reward.id;
+        } else {
+          failMsg = d.error || `HTTP ${r.status}`;
+        }
+      } catch (e) {
+        failMsg = e?.message || 'network error';
+      }
+    }
+    setStoredRankRewardIds(newIdMap);
+    const allOk = okCount === skillIds.length && !failMsg;
+    setRankSaveState(prev => ({
+      ...prev,
+      [rank]: {
+        saving: false,
+        msg: allOk ? `Saved ${okCount} reward${okCount !== 1 ? 's' : ''}` : `Error: ${failMsg || 'partial save'}`,
+        ok: allOk,
+      },
+    }));
+    setTimeout(() => {
+      setRankSaveState(prev => ({ ...prev, [rank]: { saving: false, msg: '', ok: null } }));
+    }, 4000);
+  }, [token, rankRewards, rankSkillConfigs, storedRankRewardIds]);
 
   const updateRankSkillConfig = (rank, skillId, field, val) => {
     setRankSkillConfigs(prev => ({
@@ -5538,12 +5636,25 @@ function RanksTab({ token, rankRewards, setRankRewards }) {
             const unassigned = activeSkills.filter(s => !assignedIds.includes(s.id));
             return (
               <div style={{ marginTop: 8, background: 'rgba(0,0,0,0.3)', borderRadius: 10, padding: 12, border: `1px solid ${rt.color}20` }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                     <div style={{ fontSize: 12, color: rt.color, fontWeight: 700, fontFamily: "'Cinzel',serif" }}>Rank {expandedRank}: {rd?.name}</div>
-                    <UIOnlyBadge />
+                    {/* #129 (launch-day): UIOnlyBadge removed — bindings persist via /api/admin/rank-rewards. */}
+                    {(() => {
+                      const ss = rankSaveState[expandedRank];
+                      if (!ss?.msg) return null;
+                      return (
+                        <span style={{ fontSize: 9, color: ss.ok ? '#4ade80' : '#f87171', background: ss.ok ? 'rgba(74,222,128,0.08)' : 'rgba(239,68,68,0.08)', border: `1px solid ${ss.ok ? 'rgba(74,222,128,0.25)' : 'rgba(239,68,68,0.25)'}`, borderRadius: 4, padding: '2px 8px', fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700, letterSpacing: '.05em' }}>{ss.msg}</span>
+                      );
+                    })()}
                   </div>
-                  <div style={{ fontSize: 9, color: '#6a6078' }}>{rd?.xp?.toLocaleString()} XP · +{rd?.fgReward} FG</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ fontSize: 9, color: '#6a6078' }}>{rd?.xp?.toLocaleString()} XP · +{rd?.fgReward} FG</div>
+                    <button onClick={() => saveRankRewards(expandedRank)} disabled={!!rankSaveState[expandedRank]?.saving}
+                      style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid rgba(212,175,55,0.3)', background: rankSaveState[expandedRank]?.saving ? 'rgba(245,158,11,0.15)' : 'rgba(212,175,55,0.10)', color: rankSaveState[expandedRank]?.saving ? '#fbbf24' : '#D4AF37', fontSize: 9, fontWeight: 900, cursor: rankSaveState[expandedRank]?.saving ? 'default' : 'pointer', fontFamily: "'Barlow Condensed',sans-serif", textTransform: 'uppercase', letterSpacing: '.1em', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      {rankSaveState[expandedRank]?.saving ? 'Saving…' : 'Save Rank'}
+                    </button>
+                  </div>
                 </div>
                 {activeSkills.length === 0 && <div style={{ fontSize: 10, color: '#6a6078', marginTop: 8 }}>No active skills. Create some in Features → Skills first.</div>}
                 {assignedIds.length > 0 && (
@@ -5617,8 +5728,8 @@ function RanksTab({ token, rankRewards, setRankRewards }) {
         </div>
       ))}
 
-      <div style={{ marginTop: 16, padding: '12px 16px', background: 'rgba(168,85,247,0.06)', border: '1px solid rgba(168,85,247,0.15)', borderRadius: 8, fontSize: 11, color: '#9a8eb0', lineHeight: 1.5 }}>
-        Rank rewards are stored locally for now. Once finalized, they'll persist to the database and auto-grant when players rank up. Each rank already awards FG (shown on tiles).
+      <div style={{ marginTop: 16, padding: '12px 16px', background: 'rgba(74,222,128,0.06)', border: '1px solid rgba(74,222,128,0.15)', borderRadius: 8, fontSize: 11, color: '#86efac', lineHeight: 1.5 }}>
+        Rank rewards persist to <code style={{ color: '#D4AF37' }}>public.rank_rewards</code> via the per-rank Save button. Each rank already awards FG (shown on tiles); skill grants fire on rank-up via the lib/awardXp.js milestone chokepoint.
       </div>
       </>}
     </div>
