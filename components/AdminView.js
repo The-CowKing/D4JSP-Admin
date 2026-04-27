@@ -1242,6 +1242,9 @@ function GoldTab({ token }) {
   const [loading, setLoading] = useState(true);
   const [editingRates, setEditingRates] = useState(false);
   const [rateForm, setRateForm] = useState({ fg_per_usd: '', fg_per_cad: '' });
+  // #80B/#92 — pending-migration trigger state. One result per migration.
+  const [migrationRunning, setMigrationRunning] = useState(null); // '044' | '045' | null
+  const [migrationResults, setMigrationResults] = useState({}); // { '044': {ok, ...}, ... }
   // Gems state
   const [gemPrices, setGemPrices] = useState([]);
   const [gemRates, setGemRates] = useState([]);
@@ -1299,6 +1302,38 @@ function GoldTab({ token }) {
     if (num >= 1e6) return (num / 1e6).toFixed(2) + 'M';
     if (num >= 1e3) return (num / 1e3).toFixed(1) + 'K';
     return num.toLocaleString();
+  };
+
+  // #80B/#92 — trigger an admin-gated migration runner on the trade app.
+  // Calls POST /api/admin/apply-migration with the admin's JWT. Server
+  // verifies role=admin, opens a pg.Client to DATABASE_URL, runs the SQL
+  // file. Result (rowsAffected / error / stage) bubbles back into UI.
+  const runMigration = async (id) => {
+    if (migrationRunning) return;
+    if (!token) {
+      setMigrationResults(p => ({ ...p, [id]: { ok: false, error: 'no admin token' } }));
+      return;
+    }
+    setMigrationRunning(id);
+    try {
+      const res = await fetch('/api/admin/apply-migration', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({ migrationId: id }),
+      });
+      const body = await res.json().catch(() => ({}));
+      setMigrationResults(p => ({
+        ...p,
+        [id]: { ok: !!(res.ok && body?.ok), ...body, status: res.status, ranAt: new Date().toISOString() },
+      }));
+      // Refresh vault stats so the IN VAULT / CIRCULATING numbers reflect the
+      // backfill immediately.
+      try { await loadVaultData(); } catch (_) { /* noop */ }
+    } catch (e) {
+      setMigrationResults(p => ({ ...p, [id]: { ok: false, error: e?.message || String(e) } }));
+    } finally {
+      setMigrationRunning(null);
+    }
   };
 
   const saveRates = async () => {
@@ -1424,6 +1459,72 @@ function GoldTab({ token }) {
               {vault.last_rate_update && (
                 <div style={{ fontSize: 8, color: '#3a3048', marginTop: 8, textAlign: 'right' }}>Last updated: {new Date(vault.last_rate_update).toLocaleString()}</div>
               )}
+            </div>
+          </div>
+
+          {/* ── PENDING MIGRATIONS ─────────────────────────────────────
+              #80B/#92 — bot-shipped SQL migrations triggered from here.
+              Admin-only POST to /api/admin/apply-migration runs the file
+              server-side via pg.Client (using PM2's DATABASE_URL — never
+              touches the bot's transcript). Atomic per migration; on
+              error the file's BEGIN/COMMIT rolls back. */}
+          <div style={{ ...cardStyle, marginBottom: 16, border: '1px solid rgba(245,158,11,0.18)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <div style={{ ...labelStyle, color: '#fbbf24' }}>Pending Migrations</div>
+              <div style={{ fontSize: 8, color: '#6a6078' }}>Admin-triggered, server-runs</div>
+            </div>
+            {[
+              { id: '044', title: 'Phantom-FG Backfill', desc: 'Allocates fg_serial_ranges for every users.fg_balance > 0 (humans + bots). Reconciles fg_vault aggregate from truth. Idempotent — re-runs only fill gaps.' },
+              { id: '045', title: 'GODLY avatar_glow Perk', desc: 'Inserts avatar_glow into the skills catalog and attaches it to the GODLY tier\'s subscription_tiers.skills array. Idempotent.' },
+            ].map(m => {
+              const result = migrationResults[m.id];
+              const running = migrationRunning === m.id;
+              const ok = result?.ok === true;
+              const failed = result && result.ok === false;
+              return (
+                <div key={m.id} style={{ background: 'rgba(10,8,12,0.4)', border: '1px solid rgba(212,175,55,0.06)', borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 4 }}>
+                    <div>
+                      <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, fontSize: 12, color: ok ? '#4ade80' : failed ? '#ef4444' : '#D4AF37' }}>
+                        {m.id} — {m.title}
+                      </div>
+                      <div style={{ fontSize: 9, color: '#6a6078', marginTop: 2 }}>{m.desc}</div>
+                    </div>
+                    <button
+                      onClick={() => runMigration(m.id)}
+                      disabled={running || !!migrationRunning}
+                      style={{
+                        background: running ? 'rgba(245,158,11,0.15)' : ok ? 'rgba(74,222,128,0.10)' : 'rgba(212,175,55,0.10)',
+                        border: '1px solid ' + (running ? 'rgba(245,158,11,0.3)' : ok ? 'rgba(74,222,128,0.3)' : 'rgba(212,175,55,0.25)'),
+                        borderRadius: 6,
+                        padding: '6px 14px',
+                        color: running ? '#fbbf24' : ok ? '#4ade80' : '#D4AF37',
+                        fontSize: 10,
+                        fontWeight: 900,
+                        fontFamily: "'Barlow Condensed',sans-serif",
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.1em',
+                        cursor: (running || migrationRunning) ? 'default' : 'pointer',
+                        whiteSpace: 'nowrap',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {running ? 'Running…' : ok ? 'Re-run' : 'Apply'}
+                    </button>
+                  </div>
+                  {result && (
+                    <div style={{ marginTop: 6, padding: '6px 8px', background: ok ? 'rgba(74,222,128,0.06)' : 'rgba(239,68,68,0.06)', borderRadius: 4, fontSize: 9, fontFamily: 'monospace', color: ok ? '#86efac' : '#fca5a5', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                      {ok
+                        ? `OK · ${result.rowsAffected ?? 0} rows · last cmd: ${result.lastCommand || '—'} · ${result.ranAt ? new Date(result.ranAt).toLocaleTimeString() : ''}`
+                        : `FAIL [${result.stage || 'unknown'}] ${result.code ? '(' + result.code + ') ' : ''}${result.error || 'unknown error'}`}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            <div style={{ fontSize: 8, color: '#6a6078', marginTop: 4 }}>
+              Verified-flip rule: re-check IN VAULT &amp; CIRCULATING above after running 044 — they should reconcile to{' '}
+              <code style={{ color: '#D4AF37' }}>SUM(users.fg_balance)</code>.
             </div>
           </div>
 
