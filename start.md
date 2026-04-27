@@ -6,16 +6,19 @@ This file is identical across all 4 trade-system repos. Only the **You are in** 
 
 ---
 
-## You are in: `D4JSP` — Main Core / Trade Backend
+## You are in: `D4JSP-Admin` — Admin console (KVM 2)
 
-**The backend for everything.** Every API route in the trade system lives here; every other app calls back to these routes.
+**Master entrypoint:** for cross-app context (modular spine, escrow protection, vault discipline, Stripe contract), read the **main `D4JSP` repo's `start.md` at `C:\Users\Owner\D4JSP\start.md`**. That is the front door for the whole system. This block is admin-app-specific.
 
-- **Path:** `C:\Users\Owner\D4JSP`
-- **Stack:** Next.js 15.3.3 + custom `server.js`, Supabase JS 2.100, ~22k LOC components, **92 API routes**
-- **Deployed:** KVM 4 `/opt/d4jsp`, PM2 `d4jsp` cluster, port 3000 → `https://trade.d4jsp.org`
-- **Key entry files:** [`components/AppShell.js`](./components/AppShell.js) · [`components/HomeView.js`](./components/HomeView.js) · [`lib/supabase.js`](./lib/supabase.js) · [`lib/auth-context.js`](./lib/auth-context.js) · [`lib/triggerEngine.js`](./lib/triggerEngine.js) · [`lib/sysConfig.js`](./lib/sysConfig.js)
-- **Sister repos** (each has identical start.md with their own "You are in" block): `C:\Users\Owner\D4JSP-Admin` (admin console), `C:\Users\Owner\D4JSP-Build-Planner` (`/builder`), `C:\Users\Owner\D4JSP-Map` (iframed in profile).
-- **NOT in scope:** WordPress federation at `C:\Users\Owner\D4JSP-WP` — *touch it only when you need to.*
+- **Path:** `C:\Users\Owner\D4JSP-Admin`
+- **Stack:** Next.js 15.3.3, 2 pages (`pages/_app.js`, `pages/index.js`), lazy-loaded `AdminView`. **No own API routes** — every fetch proxies back to D4JSP main repo via `next.config.js` rewrites.
+- **Deployed:** KVM 2 `/opt/d4jsp-admin`, PM2 `d4jsp-admin` cluster, port `3001` (bound to localhost; surfaced via KVM 4 nginx) → `https://trade.d4jsp.org/admin-panel/*`
+- **basePath:** `/admin-panel` (added in `next.config.js` per #88)
+- **Auth:** Cross-domain cookie SSO on `.d4jsp.org`; `pages/index.js` checks `useAuth().isAdmin`; non-admins see "Access Denied".
+- **Repo-specific docs:** [`./docs/admin-panel.md`](./docs/admin-panel.md) — admin app architecture + 2026-04-27 updates · [`./docs/security.md`](./docs/security.md) — admin security model
+- **GitHub:** `github.com/The-CowKing/D4JSP-Admin` (may be stale — code historically edited in-place on KVM 2; re-establishing repo as source of truth is an open follow-up).
+- **KVM 2 SSH key:** `~/Desktop/keyz/d4jsp_kvm2_claude`. KVM 2 IP: `187.124.239.213`.
+- **Sister repos:** `C:\Users\Owner\D4JSP` (main core, KVM 4), `C:\Users\Owner\D4JSP-Build-Planner` (`/builder`), `C:\Users\Owner\D4JSP-Map` (iframed in profile).
 
 ---
 
@@ -428,10 +431,4 @@ For the historical full audit snapshot: [`docs/audits/2026-04-26.md`](./docs/aud
 
 # § Conventions / agent reference
 
-- [`docs/conventions.md`](./docs/conventions.md) — full set of rules, doc-debt protocol details, doc-relevant globs
-- [`docs/glossary.md`](./docs/glossary.md) — extended glossary (this file's glossary is the short version)
-- [`CLAUDE.md`](./CLAUDE.md) — auto-loaded by Claude Code on session start; trimmed pointer back to this file
-
----
-
-*This file is the front door. Everything else is reachable from here. If you create a new doc, link it from here. If you delete a doc, delete the link too. The wiki is only useful if it stays consistent.*
+- [`docs/conventions.md`](./docs/conventions.md) — full set of rules
