@@ -21,6 +21,26 @@ This file is identical across all 4 trade-system repos. Only the **You are in** 
 
 # § Protocols (read these first — they're the rules of engagement)
 
+## ⚠ MAIN DIRECTIVE — Bot owns the database. Code + migration ship together.
+
+Adam (verbatim): *"u always do supa base ur in charge of back end"* · *"u update the db when the update that requires it goes thru"* · *"make it main directive"*.
+
+When a code commit requires a schema change (new column, new function, new RLS policy, publication add, etc.):
+
+1. **Write** the migration file: `migrations/NNN_description.sql`.
+2. **Apply** the migration to production Supabase BEFORE or WITH the code deploy. Bot does this directly via service-role REST / `pg` client / Management API. NEVER deferred to Adam.
+3. **Verify** it landed via `pg_proc` / `pg_indexes` / `pg_publication` / `information_schema`.
+4. **Deploy** the code to KVM 4 (or wherever).
+
+**FORBIDDEN:** *"Adam, please apply this in Supabase SQL editor"* — Adam should never have to run SQL to make a fix work.
+
+If for some reason the migration cannot be applied automatically (hard credential blocker — DB password not in any accessible vault, no Management API PAT, no exec_sql RPC), the bot must:
+- HALT the deploy.
+- Surface the blocker to Adam with the exact reason and the missing credential needed.
+- Wait for resolution before deploying the code.
+
+The bot owns the backend end-to-end. Code changes that need schema changes are atomic — deploy both or neither.
+
 ## ⚠ HARD RULE: Verified-working flip workflow — NEVER auto-flip
 
 The "verified working" / "wired" / "green-lit" / "confirmed" switch on any catalog row (quests, triggers, specials, skills, badges, subscription tiers, fg_packages, etc.) is **flipped ONLY AFTER Adam confirms the feature works in production**.

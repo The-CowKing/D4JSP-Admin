@@ -2,6 +2,45 @@
 
 Long-form version of the protocols section in [`../start.md`](../start.md). Both stay in sync; if they drift, start.md wins for the rules and this doc gets the rationale.
 
+## ⚠ MAIN DIRECTIVE — Bot owns the database. Code + migration atomic.
+
+Adam (verbatim): *"u always do supa base ur in charge of back end"* · *"u update the db when the update that requires it goes thru"* · *"make it main directive"* · *"no wonder nothing ever fucking works"* (re: deferring migrations to Adam).
+
+### The rule
+
+When a code commit requires a schema change, the bot APPLIES the migration directly. Code and DB ship together; never deploy code that depends on un-applied migrations.
+
+### Workflow for any schema-touching commit
+
+1. Write `migrations/NNN_description.sql`.
+2. Apply it to production Supabase. Acceptable mechanisms:
+   - `psql "<DATABASE_URL>"` if the DB password is available in `keyz/` or env.
+   - `pg` Node client from KVM 4 with the DB password.
+   - Supabase Management API (`api.supabase.com/v1/projects/<ref>/database/query`) with a personal-access token.
+   - `exec_sql` SECURITY DEFINER RPC if installed.
+3. Verify it landed: `pg_proc.proname` for functions, `pg_indexes.indexname` for indexes, `pg_publication_tables` for realtime publications, `information_schema.columns` for columns/constraints.
+4. Then deploy the code to KVM 4.
+
+### Hard prohibitions
+
+- **NEVER** ship code that depends on un-applied migrations.
+- **NEVER** defer migration application to Adam.
+- *"Adam, please apply this in Supabase SQL editor"* is **FORBIDDEN**.
+
+### When you are genuinely blocked (credentials missing)
+
+If the bot literally cannot execute the SQL (no DB password, no Management PAT, no usable RPC), the bot must:
+
+1. HALT the code deploy — do not push the dependent code change to KVM 4.
+2. Report the blocker explicitly: which migration, which credential is needed, where the bot looked, what failed.
+3. Wait for Adam to provide the missing credential (or to apply the SQL via the Supabase web SQL editor as a last-resort manual override).
+
+This is the ONLY exception. Document the blocker in `_batch-log.md` so the next session can pick up.
+
+### Why this rule exists
+
+Adam: *"no wonder nothing ever fucking works"*. Migrations deferred to a human are migrations that don't get applied. Code deployments that depend on those migrations break in production with cryptic errors (PGRST202, undefined columns, missing RLS policies). The whole session degrades into "tell Adam to do step N" loops. Bot owns end-to-end or doesn't ship.
+
 ## ⚠ HARD RULE: Fixed-supply FG vault — NEVER create new gold
 
 The 100,000,000,000 FG total supply is **fixed and immutable**. Every distribution comes from transitioning the existing pool between states; no path may ever push `circulating + reserved + burned > total_supply`.
