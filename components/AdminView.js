@@ -1477,6 +1477,7 @@ function GoldTab({ token }) {
               { id: '044', title: 'Phantom-FG Backfill', desc: 'Allocates fg_serial_ranges for every users.fg_balance > 0 (humans + bots). Reconciles fg_vault aggregate from truth. Idempotent — re-runs only fill gaps.' },
               { id: '045', title: 'GODLY avatar_glow Perk', desc: 'Inserts avatar_glow into the skills catalog and attaches it to the GODLY tier\'s subscription_tiers.skills array. Idempotent.' },
               { id: '046', title: 'Reconcile Escrow Vault', desc: 'Sets fg_vault.reserved = SUM(escrow.fg_amount WHERE status=held) and adjusts circulating to match. Backfills fg_ledger audit rows for held escrows that pre-date the chokepoint helpers. Idempotent — re-runs are no-ops once aggregates match.' },
+              { id: '047', title: 'Builder Save/Load Schema', desc: 'Extends user_builds with slot_number (1-3 pinned + null = named saves), build_data jsonb, and is_pinned. Backfills build_data from legacy columns. Adds partial unique index on (user_id, slot_number) WHERE not null. Required for /builder save/load (#110). Idempotent.' },
               { id: '048', title: 'Boss Rotations (Map)', desc: 'Creates public.boss_rotations + RLS public-read + seeds 6 D4 endgame bosses on a 30-min stagger + pg_cron tick that advances expired rows by 180 min. Powers the Map iframe rotation dock + boss markers. Idempotent — seed only fires when the table is empty, cron job re-registers cleanly.' },
             ].map(m => {
               const result = migrationResults[m.id];
