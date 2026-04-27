@@ -6299,6 +6299,29 @@ function RequestsTab({ token }) {
     setApproving(prev => { const n = { ...prev }; delete n[userId]; return n; });
   }
 
+  // #67-redo (Adam): "requests still doesn't allow to click user and show
+  // options to let them in". Per-row Reject calls the existing admin/action
+  // endpoint to ban-or-mark the user so they don't sit in the queue forever.
+  // Same pattern as banUser elsewhere.
+  async function rejectRequest(userId, displayName) {
+    if (!confirm(`Reject ${displayName || 'user'}? They stay on the waitlist (approved=false) AND get marked banned so they can't retry from the same account.`)) return;
+    setApproving(prev => ({ ...prev, [userId]: true }));
+    try {
+      const r = await fetch('/api/admin/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({ action: 'banUser', userId, banByIp: false }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      setUsers(prev => prev.filter(u => u.id !== userId));
+      setTotal(prev => Math.max(0, prev - 1));
+    } catch (e) {
+      alert('Reject failed: ' + e.message);
+    }
+    setApproving(prev => { const n = { ...prev }; delete n[userId]; return n; });
+  }
+
   async function approveAll() {
     if (!confirm('Approve ALL waitlisted users? They will immediately gain full access.')) return;
     try {
@@ -6412,22 +6435,46 @@ function RequestsTab({ token }) {
             </thead>
             <tbody>
               {users.map(u => (
-                <tr key={u.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                <tr key={u.id}
+                    onClick={(e) => {
+                      // #67-redo: click anywhere on the row (except the
+                      // action buttons) opens the user-detail panel for
+                      // vetting before approve/reject.
+                      if (e.target.closest('button')) return;
+                      if (typeof window !== 'undefined') {
+                        window.location.assign(`/admin-panel/?userDetail=${u.id}`);
+                      }
+                    }}
+                    style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer', transition: 'background .15s' }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(212,175,55,0.04)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
                   <td style={{ ...cell, color: 'var(--fg)', fontWeight: 600, maxWidth: 160 }}>{u.display_name || '—'}</td>
-                  <td style={{ ...cell, maxWidth: 220 }}>{u.email || '—'}</td>
+                  <td style={{ ...cell, maxWidth: 220 }}>
+                    {u.email || '—'}
+                    {u.email?.endsWith('@auth.d4jsp.local') && (
+                      <span style={{ marginLeft: 6, fontSize: 8, padding: '1px 6px', borderRadius: 4, background: 'rgba(0,116,224,0.12)', border: '1px solid rgba(0,116,224,0.3)', color: '#60a5fa', fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, textTransform: 'uppercase', letterSpacing: '.08em' }}>BNet</span>
+                    )}
+                  </td>
                   <td style={{ ...cell, whiteSpace: 'nowrap' }}>{fmtDate(u.created_at)}</td>
                   <td style={cell}>
                     <span style={{ display: 'inline-block', background: 'rgba(250,204,21,0.08)', border: '1px solid rgba(250,204,21,0.2)', borderRadius: 5, padding: '2px 8px', fontSize: 9, fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, textTransform: 'uppercase', letterSpacing: '.1em', color: '#facc15' }}>
                       Waiting
                     </span>
                   </td>
-                  <td style={{ ...cell, textAlign: 'right' }}>
+                  <td style={{ ...cell, textAlign: 'right', whiteSpace: 'nowrap' }}>
                     <button
                       onClick={() => grantAccess(u.id)}
                       disabled={!!approving[u.id]}
-                      style={{ background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: 7, color: '#4ade80', fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', padding: '5px 12px', cursor: 'pointer', whiteSpace: 'nowrap', opacity: approving[u.id] ? 0.5 : 1 }}
+                      style={{ background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: 7, color: '#4ade80', fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', padding: '5px 10px', cursor: 'pointer', whiteSpace: 'nowrap', opacity: approving[u.id] ? 0.5 : 1, marginRight: 6 }}
                     >
-                      {approving[u.id] ? '…' : 'Grant Access'}
+                      {approving[u.id] ? '…' : '✓ Approve'}
+                    </button>
+                    <button
+                      onClick={() => rejectRequest(u.id, u.display_name)}
+                      disabled={!!approving[u.id]}
+                      style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 7, color: '#f87171', fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', padding: '5px 10px', cursor: 'pointer', whiteSpace: 'nowrap', opacity: approving[u.id] ? 0.5 : 1 }}
+                    >
+                      ✗ Reject
                     </button>
                   </td>
                 </tr>
