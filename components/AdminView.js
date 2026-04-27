@@ -1484,7 +1484,8 @@ function GoldTab({ token }) {
               { id: '051', title: 'Rank Grant Backfill (#121)', desc: 'Wallet sub-tab was empty for users who reached their rank BEFORE the milestone-grant chokepoint shipped (#102). Adds users.rank_grants_backfilled_to int marker, then for every user with rank_level >= 5 sums up RANK_SKILL_REWARDS for each milestone above their backfill mark and upserts into user_skills (capped at 20). Idempotent — re-runs only top up users whose rank advanced since last run. Adam at rank 19 should land 15 priority_listing + 13 raffle_reward + 1 avatar_glow + 1 banner_message.' },
               { id: '052', title: 'Tradeable Items Flag (#128)', desc: 'Launch-day. Adds wowhead_tooltips.is_tradeable bool default true, then backfills false where tooltip_html contains Account Bound / Bind on Pickup / Untradeable markers. Server-side create-thread.js rejects listings on non-tradeable items so the expansion-day catalog stays clean. Idempotent.' },
               { id: '053', title: 'Rank Rewards Persistence', desc: 'Launch-day. Adam: "get the ranks save thing working so I can setup the skills for ranks in admin while u work". Creates public.rank_rewards (id uuid, rank_level 1-50, reward_type text, skill_id uuid nullable, amount, duration_minutes, is_pinned, position, metadata jsonb, timestamps + updated_at trigger + indexes by rank_level/skill_id). Backed by /api/admin/rank-rewards CRUD endpoint (GET/POST/DELETE). The rank-up firing path at lib/awardXp.js:132-167 currently reads hardcoded RANK_SKILL_REWARDS — flipping it to read this DB is a follow-up; this migration just ships the persistence so admin can configure.' },
-              { id: '056', title: 'Skills Activation State (#132)', desc: 'Launch-day Active Skills tab activation state. Adds users.{avatar_glow_active_until timestamptz, avatar_glow_enabled bool, custom_rank_name text, custom_rank_title text} for the Avatar Glow dual-mode (toggle if sub/rank override, 24h ticket purchase otherwise) + Change Name / Custom Rank Title one-shot consume targets. Creates public.banner_messages (id, user_id, message≤240chars, posted_at, expires_at default now()+24h) for the Send Banner one-shot scrolling banner queue (anon SELECT WHERE expires_at > NOW() public-read RLS). Adds threads.{priority_until, glow_post_until} timestamptz for sell-pipeline 6h Priority Listing boost + Glow Post duration. Indexes for active-window lookups on each. Idempotent.' },
+              { id: '056', title: 'Skills Activation State (#132)', desc: 'Launch-day Active Skills tab activation state. Adds users.{avatar_glow_active_until timestamptz, avatar_glow_enabled bool, custom_rank_name text, custom_rank_title text} for the Avatar Glow dual-mode (toggle if sub/rank override, 24h ticket purchase otherwise) + Change Name / Custom Rank Title one-shot consume targets. Creates public.banner_messages (id, user_id, message≤240chars, posted_at, expires_at default now()+24h) for the Send Banner one-shot scrolling banner queue (anon SELECT WHERE expires_at > NOW() public-read RLS). Adds threads.{priority_until, glow_post_until} timestamptz for sell-pipeline Priority Listing boost + Glow Post duration. Indexes for active-window lookups on each. Idempotent.' },
+              { id: '057', title: 'Skill Duration Constants (#133)', desc: 'Adam: "each token can\'t have different duration". Durations are skill-level constants stored in skills.config.default_duration_minutes via UPDATE jsonb_set: priority_listing=180min (3h, corrected from 6h), post_glow=180min (3h), avatar_glow=1440min (24h), banner_message/change_name/custom_title/title/raffle_reward=null (one-shot or n/a). Server-side (create-thread.js, /api/skills/activate) reads this value at consume time. Admin rank-bindings UI now shows AMOUNT only — duration auto-resolves from the skill row. Idempotent.' },
             ].map(m => {
               const result = migrationResults[m.id];
               const running = migrationRunning === m.id;
@@ -5456,7 +5457,16 @@ function RanksTab({ token, rankRewards, setRankRewards }) {
   // hasn't been MCP-applied yet (PGRST schema-cache returns 4xx).
   useEffect(() => {
     if (!token) return;
-    fetch('/api/admin/rank-rewards', { headers: { Authorization: 'Bearer ' + token } })
+    // #133: fresh-token pattern — same as saveRankRewards. Stale JWT here
+    // would 401 the load and the panel would stay empty even when bindings
+    // exist server-side.
+    (async () => {
+      let freshToken = token;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) freshToken = session.access_token;
+      } catch (_) { /* fall back */ }
+      return fetch('/api/admin/rank-rewards', { headers: { Authorization: 'Bearer ' + freshToken } })
       .then(r => r.json())
       .then(d => {
         if (!d?.ok || !d.rewards) return;
@@ -5487,6 +5497,7 @@ function RanksTab({ token, rankRewards, setRankRewards }) {
         });
       })
       .catch(() => {});
+    })();
   }, [token, setRankRewards]);
 
   // Save all skill bindings for one rank in a single batch — one POST per
@@ -5495,6 +5506,18 @@ function RanksTab({ token, rankRewards, setRankRewards }) {
   // otherwise; #129 returns {ok: true, reward}).
   const saveRankRewards = useCallback(async (rank) => {
     setRankSaveState(prev => ({ ...prev, [rank]: { saving: true, msg: '', ok: null } }));
+    // #133 (Adam, 2026-04-27): "Error: Session invalid" on Save Rank.
+    // Top-level admin `token` state is loaded once at mount via loadData
+    // and goes stale when the JWT expires (~1h default). The working
+    // pattern (permApi at line 1007) fetches a FRESH token from
+    // supabase.auth.getSession() per call. Mirroring that here so save
+    // calls never send a stale JWT.
+    let freshToken = token;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) freshToken = session.access_token;
+    } catch (_) { /* fall back to prop token */ }
+
     const skillIds = (rankRewards[rank] || []).map(e => (typeof e === 'string' ? e : e.id));
     let okCount = 0;
     let failMsg = '';
@@ -5508,12 +5531,15 @@ function RanksTab({ token, rankRewards, setRankRewards }) {
         reward_type: 'skill_grant',
         skill_id: skillId,
         amount: Number(cfg.amount) || 0,
-        duration_minutes: cfg.duration_minutes != null ? Number(cfg.duration_minutes) : null,
+        // #133: durations are SKILL-LEVEL constants stored in
+        // skills.config.default_duration_minutes (migration 057). Admin
+        // only edits AMOUNT — duration_minutes always omitted from the
+        // binding row. Server reads from skills.config at spend time.
       };
       try {
         const r = await fetch('/api/admin/rank-rewards', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + freshToken },
           body: JSON.stringify(body),
         });
         const d = await r.json();
@@ -5675,6 +5701,14 @@ function RanksTab({ token, rankRewards, setRankRewards }) {
                       if (Array.isArray(s.dials)) dialKeys = s.dials;
                       else if (Array.isArray(s.dials?.fields)) dialKeys = s.dials.fields.map(f => f.key || f);
                       else if (s.type !== 'badge') dialKeys = ['amount']; // Adam #97: every grantable skill needs an amount
+                      // #133 (Adam, 2026-04-27): "each token can't have different duration".
+                      // Durations are skill-level constants (skills.config.default_duration_minutes
+                      // via migration 057) — admin only edits AMOUNT per rank-binding.
+                      // Strip any duration_minutes / duration field from the rank UI.
+                      dialKeys = dialKeys.filter(k => {
+                        const key = typeof k === 'string' ? k : (k?.key || '');
+                        return key !== 'duration' && key !== 'duration_minutes';
+                      });
                       const fields = s.type === 'badge'
                         ? []
                         : dialKeys.map(k => (typeof k === 'string' ? RANK_DIAL_SPECS[k] : k)).filter(Boolean);
