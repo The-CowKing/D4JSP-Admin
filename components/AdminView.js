@@ -1350,11 +1350,29 @@ function GoldTab({ token }) {
                 <div style={bigNumStyle}>{formatBig(vault.total_supply)}</div>
                 <div style={{ fontSize: 8, color: '#4ade80', marginTop: 2 }}>100,000,000,000 coins</div>
               </div>
-              <div style={cardStyle}>
-                <div style={labelStyle}>In Vault</div>
-                <div style={{ ...bigNumStyle, color: '#60a5fa' }}>{formatBig(Math.max(0, (Number(vault.total_supply) || 0) - (Number(vault.circulating) || 0) - (Number(vault.burned) || 0) - (Number(vault.reserved) || 0)))}</div>
-                <div style={{ fontSize: 8, color: '#6a6078', marginTop: 2 }}>Unminted</div>
-              </div>
+              {(() => {
+                // #90: when in_vault is just below total_supply (e.g. 99,999,994,900
+                // with 5,100 circulating), formatBig rounds to "100.00B" — looks
+                // identical to TOTAL SUPPLY and Adam reads it as broken. Show
+                // higher precision (5 dp on B-scale) to surface the gap, plus
+                // exact toLocaleString underneath as the source of truth.
+                const inVault = Math.max(0,
+                  (Number(vault.total_supply) || 0)
+                  - (Number(vault.circulating) || 0)
+                  - (Number(vault.burned) || 0)
+                  - (Number(vault.reserved) || 0)
+                );
+                const display = inVault >= 1e9
+                  ? (inVault / 1e9).toFixed(5).replace(/\.?0+$/, '') + 'B'
+                  : formatBig(inVault);
+                return (
+                  <div style={cardStyle}>
+                    <div style={labelStyle}>In Vault</div>
+                    <div style={{ ...bigNumStyle, color: '#60a5fa' }}>{display}</div>
+                    <div style={{ fontSize: 8, color: '#6a6078', marginTop: 2 }}>Unminted · {inVault.toLocaleString()}</div>
+                  </div>
+                );
+              })()}
               <div style={cardStyle}>
                 <div style={labelStyle}>Circulating</div>
                 <div style={{ ...bigNumStyle, color: '#4ade80' }}>{formatBig(Number(vault.circulating) || 0)}</div>
