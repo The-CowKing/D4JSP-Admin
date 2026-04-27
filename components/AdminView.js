@@ -5367,6 +5367,56 @@ function RankDataEditor({ token }) {
   );
 }
 
+// #97: skills.dials is stored as an array of dial keys (e.g.
+// ["amount", "duration"]). The admin's SkillFieldInput expects full field
+// objects with key/label/type/etc. This map converts dial keys → field
+// specs. Adding a new dial key to a skill in the catalog = adding it here.
+// Defaults align with the wallet-card cap rules (default 1, max 20 from
+// Adam's #77 cap).
+const RANK_DIAL_SPECS = {
+  amount: {
+    key: 'amount',
+    label: 'Amount',
+    type: 'number',
+    placeholder: '1',
+    min: 1,
+    max: 20,
+  },
+  charges: {
+    key: 'charges',
+    label: 'Charges',
+    type: 'number',
+    placeholder: '1',
+    min: 1,
+    max: 20,
+  },
+  duration: {
+    key: 'duration',
+    label: 'Duration (min)',
+    type: 'number',
+    placeholder: '1440',
+    min: 1,
+  },
+  duration_minutes: {
+    key: 'duration_minutes',
+    label: 'Duration (min)',
+    type: 'number',
+    placeholder: '1440',
+    min: 1,
+  },
+  expires_at: {
+    key: 'expires_at',
+    label: 'Expires',
+    type: 'date',
+  },
+  status: {
+    key: 'status',
+    label: 'Status',
+    type: 'text',
+    placeholder: 'charge',
+  },
+};
+
 function RanksTab({ token, rankRewards, setRankRewards }) {
   const [skills, setSkills] = useState([]);
   const [expandedRank, setExpandedRank] = useState(null);
@@ -5396,6 +5446,18 @@ function RanksTab({ token, rankRewards, setRankRewards }) {
     setRankRewards(prev => {
       const current = (prev[rank] || []).map(e => (typeof e === 'string' ? e : e.id));
       return { ...prev, [rank]: current.includes(skillId) ? current.filter(s => s !== skillId) : [...current, skillId] };
+    });
+    // #97: seed amount=1 default into rankSkillConfigs when adding a new
+    // skill so the chip header immediately reads "× 1" + the inline amount
+    // input pre-fills with 1. If the skill is being removed (already in
+    // current), this is a no-op overwrite — harmless.
+    setRankSkillConfigs(prev => {
+      const existingCfg = prev[rank]?.[skillId];
+      if (existingCfg && existingCfg.amount) return prev; // already configured
+      return {
+        ...prev,
+        [rank]: { ...(prev[rank] || {}), [skillId]: { ...(existingCfg || {}), amount: 1 } },
+      };
     });
   };
 
@@ -5452,8 +5514,19 @@ function RanksTab({ token, rankRewards, setRankRewards }) {
           {/* Expanded rank skill picker */}
           {expandedRank >= rt.range[0] && expandedRank <= rt.range[1] && (() => {
             const rd = RANKS[expandedRank - 1];
-            const assignedIds = (rankRewards[expandedRank] || []).map(e => (typeof e === 'string' ? e : e.id));
-            const activeSkills = skills.filter(s => s.active);
+            // #97 (Adam): "the subscription badges can be removed off there
+            // too only rewards and skills and permissions". Tier badges
+            // (Verified / Member / Premium / Elite / Legendary / Godly) are
+            // tied to subscription tier purchases, not rank-up. Drop them
+            // from BOTH the assigned-list rendering (in case any rank had
+            // a badge added pre-this-fix) and the picker.
+            const assignedIds = (rankRewards[expandedRank] || [])
+              .map(e => (typeof e === 'string' ? e : e.id))
+              .filter(sid => {
+                const s = skills.find(sk => sk.id === sid);
+                return s && s.type !== 'badge';
+              });
+            const activeSkills = skills.filter(s => s.active && s.type !== 'badge');
             const unassigned = activeSkills.filter(s => !assignedIds.includes(s.id));
             return (
               <div style={{ marginTop: 8, background: 'rgba(0,0,0,0.3)', borderRadius: 10, padding: 12, border: `1px solid ${rt.color}20` }}>
@@ -5471,14 +5544,31 @@ function RanksTab({ token, rankRewards, setRankRewards }) {
                       const s = skills.find(sk => sk.id === sid);
                       if (!s) return null;
                       const tc = TYPE_COLORS[s.type] || '#6b7280';
-                      // Schema-driven: read fields from skill.dials.fields (set in Catalogue).
-                      // Badges are always fieldless — just awarded.
-                      const fields = s.type === 'badge' ? [] : (s.dials?.fields || []);
+                      // #97 — Schema-driven: skills.dials is stored in DB as
+                      // an array of dial keys (e.g. ["amount", "duration"]).
+                      // Convert each key to a full field object via
+                      // RANK_DIAL_SPECS. Backward-compat: if a skill has
+                      // legacy `dials.fields` object form, read that.
+                      // If a skill has no dials at all, default to ["amount"]
+                      // so admin can always specify a quantity per rank.
+                      let dialKeys = [];
+                      if (Array.isArray(s.dials)) dialKeys = s.dials;
+                      else if (Array.isArray(s.dials?.fields)) dialKeys = s.dials.fields.map(f => f.key || f);
+                      else if (s.type !== 'badge') dialKeys = ['amount']; // Adam #97: every grantable skill needs an amount
+                      const fields = s.type === 'badge'
+                        ? []
+                        : dialKeys.map(k => (typeof k === 'string' ? RANK_DIAL_SPECS[k] : k)).filter(Boolean);
                       const cfg = rankSkillConfigs[expandedRank]?.[sid] || {};
                       return (
                         <div key={sid} style={{ background: tc + '0a', border: `1px solid ${tc}25`, borderRadius: 8, padding: '8px 10px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: fields.length ? 6 : 0 }}>
-                            <span style={{ color: tc, fontWeight: 700, fontSize: 11, fontFamily: "'Barlow Condensed',sans-serif" }}>{s.name}</span>
+                            <span style={{ color: tc, fontWeight: 700, fontSize: 11, fontFamily: "'Barlow Condensed',sans-serif" }}>
+                              {s.name}
+                              {/* #97: surface the configured amount in the chip header so admins see the effective grant at a glance */}
+                              {cfg.amount && Number(cfg.amount) > 0 && (
+                                <span style={{ marginLeft: 6, color: tc, opacity: 0.7, fontWeight: 900 }}>× {cfg.amount}</span>
+                              )}
+                            </span>
                             <button onClick={() => toggleSkillForRank(expandedRank, sid)} style={{ background: 'rgba(220,38,38,0.12)', border: '1px solid rgba(220,38,38,0.25)', borderRadius: 4, padding: '2px 8px', color: '#f87171', fontSize: 8, fontWeight: 700, cursor: 'pointer' }}>Remove</button>
                           </div>
                           {fields.length > 0 && (
