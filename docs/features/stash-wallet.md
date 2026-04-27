@@ -111,7 +111,7 @@ Per Adam: *"like I said I think that's all built it just never surfaces from pre
 ## Cross-references
 
 - [`../catalogs/skills.md`](../catalogs/skills.md) — skill catalog rows + cap_per_user
-- [`./priority-post.md`](./priority-post.md) — priority post specifics (TBD)
-- [`./avatar-glow.md`](./avatar-glow.md) — avatar glow render contract (TBD)
+- `./priority-post.md` (TBD — feature not yet implemented)
+- `./avatar-glow.md` (TBD — feature not yet implemented)
 - [`../numbered-fg-vault.md`](../numbered-fg-vault.md) — FG card source of truth
 - [`../_batch-log.md`](../_batch-log.md) — #75 / #76 / #76b / #77 / #78 / #79 entries

@@ -80,6 +80,14 @@ Full lifecycle, schemas, mint/grant/trade/burn flows, and audit follow-ups are d
 
 Real money. Bugs here are fraud-vector territory. Move with rigor.
 
+## ⚠ HARD RULE: verify-docs CI must stay green
+
+If `verify-docs` fails on push, GitHub emails Adam. Across 4 sibling repos and 30+ commits per session, that's hundreds of "Run failed: verify-docs" emails. Every dead intra-wiki link or malformed batch-log SHA spams his inbox.
+
+**Rule:** before pushing any docs change, run `node scripts/verify-docs.js` locally; CI must end with `verify-docs: OK`. If a link points to a planned-but-not-yet-built doc, write the path as inline code (not a markdown link) with a `(TBD — ...)` note next to it — that doesn't get parsed as a link.
+
+If CI ever goes red on `verify-docs`, the next push must include the fix. Don't ignore it; don't disable the workflow without fixing the underlying script.
+
 ## ⚠ HARD RULE: Verified-working flip workflow — NEVER auto-flip
 
 The "verified working" / "wired" / "green-lit" / "confirmed" switch on any catalog row (quests, triggers, specials, skills, badges, subscription tiers, fg_packages, ranks, etc.) is **flipped ONLY AFTER Adam confirms the feature works in production**.
