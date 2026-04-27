@@ -1293,6 +1293,7 @@ function GoldTab({ token }) {
   const formatBig = (n) => {
     if (n === null || n === undefined) return '—';
     const num = Number(n);
+    if (!Number.isFinite(num)) return '—';
     if (num >= 1e12) return (num / 1e12).toFixed(2) + 'T';
     if (num >= 1e9) return (num / 1e9).toFixed(2) + 'B';
     if (num >= 1e6) return (num / 1e6).toFixed(2) + 'M';
@@ -1307,7 +1308,7 @@ function GoldTab({ token }) {
     if (!usd || !cad) return;
     await supabase.from('fg_vault').update({ fg_per_usd: usd, fg_per_cad: cad, last_rate_update: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', vault.id);
     // Snapshot to price history
-    await supabase.from('fg_price_history').insert({ fg_per_usd: usd, fg_per_cad: cad, circulating: vault.in_circulation, volume_24h: 0 });
+    await supabase.from('fg_price_history').insert({ fg_per_usd: usd, fg_per_cad: cad, circulating: vault.circulating, volume_24h: 0 });
     setEditingRates(false);
     loadVaultData();
   };
@@ -1351,22 +1352,22 @@ function GoldTab({ token }) {
               </div>
               <div style={cardStyle}>
                 <div style={labelStyle}>In Vault</div>
-                <div style={{ ...bigNumStyle, color: '#60a5fa' }}>{formatBig(vault.total_supply - vault.in_circulation - vault.total_burned - vault.in_escrow)}</div>
+                <div style={{ ...bigNumStyle, color: '#60a5fa' }}>{formatBig(Math.max(0, (Number(vault.total_supply) || 0) - (Number(vault.circulating) || 0) - (Number(vault.burned) || 0) - (Number(vault.reserved) || 0)))}</div>
                 <div style={{ fontSize: 8, color: '#6a6078', marginTop: 2 }}>Unminted</div>
               </div>
               <div style={cardStyle}>
                 <div style={labelStyle}>Circulating</div>
-                <div style={{ ...bigNumStyle, color: '#4ade80' }}>{formatBig(vault.in_circulation)}</div>
+                <div style={{ ...bigNumStyle, color: '#4ade80' }}>{formatBig(Number(vault.circulating) || 0)}</div>
                 <div style={{ fontSize: 8, color: '#6a6078', marginTop: 2 }}>In user wallets</div>
               </div>
               <div style={cardStyle}>
                 <div style={labelStyle}>Burned</div>
-                <div style={{ ...bigNumStyle, color: '#ef4444' }}>{formatBig(vault.total_burned)}</div>
+                <div style={{ ...bigNumStyle, color: '#ef4444' }}>{formatBig(Number(vault.burned) || 0)}</div>
                 <div style={{ fontSize: 8, color: '#6a6078', marginTop: 2 }}>Permanently destroyed</div>
               </div>
               <div style={cardStyle}>
                 <div style={labelStyle}>Reserved</div>
-                <div style={{ ...bigNumStyle, color: '#f97316' }}>{formatBig(vault.in_escrow)}</div>
+                <div style={{ ...bigNumStyle, color: '#f97316' }}>{formatBig(Number(vault.reserved) || 0)}</div>
                 <div style={{ fontSize: 8, color: '#6a6078', marginTop: 2 }}>Escrow / rewards / system</div>
               </div>
               <div style={cardStyle}>
