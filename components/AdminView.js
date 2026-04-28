@@ -6734,26 +6734,20 @@ function UsersListView({ token, currentUserId, onSelect }) {
     try {
       let authToken = token;
       if (!authToken) throw new Error('No auth token — reload the page');
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-      let r;
-      try {
-        r = await fetch(`/api/admin/tabs?type=users&page=${p}${buildFilterParams(f)}`, {
-          headers: { Authorization: 'Bearer ' + authToken },
-          signal: controller.signal,
-        });
-      } finally {
-        clearTimeout(timeout);
-      }
+      // Removed AbortController 10s timeout — violates CLAUDE.md hard rule #2.
+      // Root cause of slowness was select('*') + unbounded escrow queries in
+      // /api/admin/tabs; fixed server-side. Client just waits for the response.
+      const r = await fetch(`/api/admin/tabs?type=users&page=${p}${buildFilterParams(f)}`, {
+        headers: { Authorization: 'Bearer ' + authToken },
+      });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
       console.log('[UsersTab] page', p, 'loaded', j.total, 'total');
       setUsers(j.users || []);
       setTotal(j.total || 0);
     } catch (e) {
-      const msg = e.name === 'AbortError' ? 'Request timed out after 10s' : e.message;
       console.error('[UsersTab] load failed:', e);
-      setErr(msg);
+      setErr(e.message);
     }
     setLoading(false);
   }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -7775,26 +7769,18 @@ export default function AdminView({ showToast }) {
       if (!accessToken) throw new Error('Not authenticated');
       setToken(accessToken);
 
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-      let res;
-      try {
-        res = await fetch('/api/admin/data', {
-          headers: { Authorization: 'Bearer ' + accessToken },
-          signal: controller.signal,
-        });
-      } finally {
-        clearTimeout(timeout);
-      }
+      // Removed AbortController — same fix as UsersTab (CLAUDE.md hard rule #2).
+      const res = await fetch('/api/admin/data', {
+        headers: { Authorization: 'Bearer ' + accessToken },
+      });
 
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
       console.log('[AdminView] data loaded', json);
       setData(json);
     } catch (e) {
-      const msg = e.name === 'AbortError' ? 'Request timed out after 10s' : e.message;
       console.error('[AdminView] load failed:', e);
-      setErr(msg);
+      setErr(e.message);
     } finally {
       setLoading(false);
     }
