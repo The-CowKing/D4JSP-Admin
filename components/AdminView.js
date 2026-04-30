@@ -6979,6 +6979,76 @@ function AiUsageCard({ token }) {
 }
 
 // ── SpecialsTab ────────────────────────────────────────────────────────────
+// ── VisitorsCard ─────────────────────────────────────────────────────
+// Real visitor counts from nginx access logs. Filters out Adam's own IPs
+// (174.197.66.77, 75.159.9.196), the host (177.7.32.128), and known
+// crawlers (Googlebot, Bing, SemRush, etc.). Shows last hour / today /
+// 24h / 7d unique counts plus a recent-visitors list.
+function VisitorsCard({ token }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState(null);
+
+  const load = useCallback(async () => {
+    if (!token) return;
+    try {
+      const r = await fetch('/api/admin/visitors', { headers: { Authorization: 'Bearer ' + token } });
+      if (r.ok) { setData(await r.json()); setErr(null); }
+      else setErr('HTTP ' + r.status);
+    } catch (e) { setErr(e.message); }
+  }, [token]);
+
+  useEffect(() => {
+    load();
+    const id = setInterval(load, 60000);
+    return () => clearInterval(id);
+  }, [load]);
+
+  const cells = [
+    { label: 'Last hour', value: data?.lastHour, color: '#4ade80' },
+    { label: 'Today',     value: data?.today,    color: G },
+    { label: '24 hours',  value: data?.last24h,  color: '#60a5fa' },
+    { label: '7 days',    value: data?.last7d,   color: '#a78bfa' },
+  ];
+
+  return (
+    <div style={{ background: 'linear-gradient(135deg,#0e0c10,#111018)', border: '1px solid rgba(212,175,55,0.12)', borderRadius: 16, padding: '20px 20px 18px', marginBottom: 28 }}>
+      <div className="cinzel" style={{ fontSize: 13, color: G, letterSpacing: 1.5, marginBottom: 16 }}>Visitors (real, bots filtered)</div>
+      {err && <div style={{ color: '#f87171', fontSize: 11, marginBottom: 10 }}>Failed to load: {err}</div>}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 10, marginBottom: 14 }}>
+        {cells.map(c => (
+          <div key={c.label} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(212,175,55,0.06)', borderRadius: 10, padding: '14px 10px', textAlign: 'center' }}>
+            <div className="cinzel" style={{ fontSize: 24, color: c.color, fontWeight: 900, lineHeight: 1 }}>
+              {data ? (c.value ?? 0).toLocaleString() : '—'}
+            </div>
+            <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, fontSize: 9, textTransform: 'uppercase', letterSpacing: '.14em', color: 'var(--mt)', marginTop: 6 }}>{c.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {data && (
+        <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 10, color: 'var(--mt)', marginBottom: 6 }}>
+          {data.totalLogRows.toLocaleString()} log rows scanned, {data.filteredSelf.toLocaleString()} self-IP hits, {data.filteredCrawler.toLocaleString()} crawler hits filtered
+        </div>
+      )}
+
+      {data?.recent?.length > 0 && (
+        <details style={{ marginTop: 8 }}>
+          <summary style={{ cursor: 'pointer', fontFamily: "'Barlow Condensed',sans-serif", fontSize: 11, color: 'var(--sub)', textTransform: 'uppercase', letterSpacing: '.1em' }}>Recent IPs (last 24h)</summary>
+          <div style={{ maxHeight: 200, overflowY: 'auto', marginTop: 8, fontFamily: 'ui-monospace, monospace', fontSize: 10, color: 'var(--sub)' }}>
+            {data.recent.map(r => (
+              <div key={r.ip} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                <span style={{ color: G }}>{r.ip}</span>
+                <span style={{ color: 'var(--mt)' }}>{r.count} hits</span>
+                <span style={{ color: 'var(--mt)' }}>{new Date(r.lastTs).toLocaleTimeString()}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
 // Top-level admin tab. Lists all specials with toggle + progress + create form.
 function SpecialsTab({ token }) {
   const [specials, setSpecials] = useState([]);
@@ -7842,6 +7912,8 @@ export default function AdminView({ showToast }) {
           </div>
 
           <AiUsageCard token={token} />
+
+          <VisitorsCard token={token} />
 
           {/* Placeholder stat cards */}
           <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, fontSize: 9, textTransform: 'uppercase', letterSpacing: '.2em', color: 'var(--mt)', marginBottom: 16 }}>Platform Stats — placeholders, wire up individually</div>
