@@ -303,3 +303,22 @@ Without the wiki, that flow takes 30+ minutes per loop because the executor re-l
 - [`./_batch-log.md`](./_batch-log.md) — the active QA checklist
 - [`./_doc-debt.md`](./_doc-debt.md) — debt to clear before declaring done
 - [`./glossary.md`](./glossary.md) — vocabulary
+
+## Project Layout Rules (HARD)
+
+**`start.md` ALWAYS lives at the repo root. NEVER moves to `docs/` or any subfolder.**
+
+Adam (2026-04-27): "yeah make sure it knows that for connections too. that start.md never leaves the base folder I don't wanna look for it"
+
+Applies to all 4 trade-system repos: `D4JSP`, `D4JSP-Admin`, `D4JSP-Build-Planner`, `D4JSP-Map`. Same rule everywhere — `start.md` lives at the root, period.
+
+If next bot or future tooling tries to relocate `start.md` (wiki sweep, refactor, "tidy up", etc.) the move is REVERTED — `start.md` is the one file Adam wants in a known fixed location. He points new bots at `start.md` and expects to find it without hunting.
+
+Each repo's `start.md` carries a top-of-file marker comment so the rule is visible inline:
+
+```html
+<!-- LOCATION RULE: this file lives at repo root, never moved. -->
+```
+
+If you find a copy under `docs/` somewhere, delete the docs/ copy and confirm the root copy is current.
+

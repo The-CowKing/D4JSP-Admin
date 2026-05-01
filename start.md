@@ -1,3 +1,4 @@
+<!-- LOCATION RULE: this file lives at repo root, never moved. -->
 # D4JSP — start.md
 
 This file is the front door. Read it top-to-bottom on a fresh session, then follow the links into `docs/` for anything you need to touch. **The wiki IS the audit — every push keeps it current via the doc-debt protocol below.** If a fact in here disagrees with the code, the code is right and the doc is a bug — fix it.
@@ -431,4 +432,10 @@ For the historical full audit snapshot: [`docs/audits/2026-04-26.md`](./docs/aud
 
 # § Conventions / agent reference
 
-- [`docs/conventions.md`](./docs/conventions.md) — full set of rules
+- [`docs/conventions.md`](./docs/conventions.md) — full set of rules, doc-debt protocol details, doc-relevant globs
+- [`docs/glossary.md`](./docs/glossary.md) — extended glossary (this file's glossary is the short version)
+- [`CLAUDE.md`](./CLAUDE.md) — auto-loaded by Claude Code on session start; trimmed pointer back to this file
+
+---
+
+*This file is the front door. Everything else is reachable from here. If you create a new doc, link it from here. If you delete a doc, delete the link too. The wiki is only useful if it stays consistent.*
